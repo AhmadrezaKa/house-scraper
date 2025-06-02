@@ -15,22 +15,47 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class FundaBusinessScraper:
-    def __init__(self, headless=True):
+class FundaScraper:
+    def __init__(self, area="amsterdam", want_to="rent", find_past=False, n_pages=1, headless=True):
         """
-        Initialize the Funda Business Scraper
+        Initialize the Funda Scraper
         
         Args:
+            area (str): Area to search in (e.g., "amsterdam", "rotterdam")
+            want_to (str): Type of listing ("rent" or "buy")
+            find_past (bool): Whether to search for past listings
+            n_pages (int): Number of pages to scrape
             headless (bool): Whether to run browser in headless mode
         """
         self.base_url = "https://www.fundainbusiness.nl"
-        self.agrarische_url = f"{self.base_url}/agrarische-grond/"
-        self.setup_driver(headless)
+        self.area = area.lower()
+        self.want_to = want_to.lower()
+        self.find_past = find_past
+        self.n_pages = n_pages
+        self.headless = headless
         
-    def setup_driver(self, headless):
+        # Construct the URL based on parameters
+        self.search_url = self._construct_search_url()
+        self.setup_driver()
+        
+    def _construct_search_url(self):
+        """Construct the search URL based on parameters"""
+        base = f"{self.base_url}/agrarische-grond/"
+        params = []
+        
+        if self.area:
+            params.append(f"area={self.area}")
+        if self.want_to:
+            params.append(f"type={self.want_to}")
+        if self.find_past:
+            params.append("status=sold")
+            
+        return f"{base}?{'&'.join(params)}"
+        
+    def setup_driver(self):
         """Setup Selenium WebDriver with appropriate options"""
         chrome_options = Options()
-        if headless:
+        if self.headless:
             chrome_options.add_argument("--headless")
         
         # Add random user agent
@@ -47,22 +72,22 @@ class FundaBusinessScraper:
             options=chrome_options
         )
         
-    def get_listings(self, max_pages=5):
+    def run(self, raw_data=False):
         """
-        Scrape agricultural land listings from Funda Business
+        Run the scraper and return the results
         
         Args:
-            max_pages (int): Maximum number of pages to scrape
+            raw_data (bool): If True, return raw data without processing
             
         Returns:
-            list: List of dictionaries containing listing data
+            pandas.DataFrame: DataFrame containing the scraped data
         """
         listings = []
         current_page = 1
         
         try:
-            while current_page <= max_pages:
-                url = f"{self.agrarische_url}?page={current_page}"
+            while current_page <= self.n_pages:
+                url = f"{self.search_url}&page={current_page}"
                 logger.info(f"Scraping page {current_page}")
                 
                 self.driver.get(url)
@@ -90,8 +115,23 @@ class FundaBusinessScraper:
                 
         except Exception as e:
             logger.error(f"Error during scraping: {str(e)}")
+        finally:
+            self.close()
         
-        return listings
+        if raw_data:
+            return listings
+        
+        # Convert to DataFrame and process
+        df = pd.DataFrame(listings)
+        if not df.empty:
+            # Clean up price column
+            df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').astype(float)
+            
+            # Extract details into separate columns
+            details_df = pd.json_normalize(df['details'])
+            df = pd.concat([df.drop('details', axis=1), details_df], axis=1)
+            
+        return df
     
     def _extract_listing_data(self, element):
         """Extract data from a single listing element"""
@@ -121,21 +161,18 @@ class FundaBusinessScraper:
             logger.error(f"Error extracting listing data: {str(e)}")
             return None
     
-    def save_to_csv(self, listings, filename="funda_business_listings.csv"):
-        """Save scraped listings to CSV file"""
-        df = pd.DataFrame(listings)
-        df.to_csv(filename, index=False)
-        logger.info(f"Saved {len(listings)} listings to {filename}")
-    
     def close(self):
         """Close the browser"""
-        self.driver.quit()
+        if hasattr(self, 'driver'):
+            self.driver.quit()
 
 if __name__ == "__main__":
     # Example usage
-    scraper = FundaBusinessScraper(headless=True)
-    try:
-        listings = scraper.get_listings(max_pages=3)
-        scraper.save_to_csv(listings)
-    finally:
-        scraper.close() 
+    scraper = FundaScraper(
+        area="amsterdam",
+        want_to="rent",
+        find_past=False,
+        n_pages=1
+    )
+    df = scraper.run()
+    print(df.head()) 
