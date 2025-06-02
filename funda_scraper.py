@@ -4,11 +4,14 @@ import re
 import random
 import pandas as pd
 from bs4 import BeautifulSoup
-import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,23 +36,49 @@ class FundaScraper:
         self.setup_driver()
         
     def setup_driver(self):
-        """Setup undetected-chromedriver with appropriate options"""
-        options = uc.ChromeOptions()
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
+        """Setup Chrome driver with anti-detection measures"""
+        options = Options()
         
-        # Add random window size to appear more human-like
+        # Add arguments to make browser less detectable
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-gpu')
+        
+        # Add random window size
         window_sizes = [(1920, 1080), (1366, 768), (1440, 900)]
         width, height = random.choice(window_sizes)
         options.add_argument(f'--window-size={width},{height}')
         
+        # Add random user agent
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        ]
+        options.add_argument(f'user-agent={random.choice(user_agents)}')
+        
+        # Add experimental options
+        options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        
         # Initialize the driver
-        self.driver = uc.Chrome(options=options)
+        service = Service(ChromeDriverManager().install())
+        self.driver = webdriver.Chrome(service=service, options=options)
+        
+        # Set page load timeout
         self.driver.set_page_load_timeout(30)
         
+        # Execute CDP commands to prevent detection
+        self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            "userAgent": random.choice(user_agents)
+        })
+        
+        # Remove webdriver flags
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
     def _get_page(self, page_num):
-        """Get the HTML content of a page using undetected-chromedriver"""
+        """Get the HTML content of a page using Selenium"""
         url = f"{self.base_url}/agrarische-grond/{self.city}/+{self.radius}/"
         if page_num > 1:
             url += f"?page={page_num}"
