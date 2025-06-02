@@ -17,4 +17,4 @@ print(df.head())
 
 # Save results to CSV
 df.to_csv("funda_listings.csv", index=False)
-print("\nResults saved to 'funda_listings.csv'")
+print("\nResults saved to 'funda_listings.csv'") 
