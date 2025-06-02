@@ -3,13 +3,13 @@ from funda_scraper import FundaScraper
 def main():
     # Create scraper instance
     scraper = FundaScraper(
-        area="amsterdam",  # Change this to your desired area
-        want_to="rent",    # Options: "rent" or "buy"
-        n_pages=1         # Number of pages to scrape
+        city="den-bosch",    # Change this to your desired city
+        radius="50km",       # Change this to your desired radius
+        n_pages=1           # Number of pages to scrape
     )
     
     # Run the scraper
-    print("Starting to scrape...")
+    print("Starting to scrape agricultural land listings...")
     df = scraper.run()
     
     # Display results
@@ -18,8 +18,9 @@ def main():
     
     # Save to CSV
     if not df.empty:
-        df.to_csv("funda_listings.csv", index=False)
-        print("\nResults saved to 'funda_listings.csv'")
+        filename = f"funda_agrarische_{scraper.city}_{scraper.radius}.csv"
+        df.to_csv(filename, index=False)
+        print(f"\nResults saved to '{filename}'")
     else:
         print("\nNo listings found!")
 
