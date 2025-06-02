@@ -1,10 +1,14 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
 import time
 import logging
 import re
 import random
+import pandas as pd
+from bs4 import BeautifulSoup
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,33 +30,26 @@ class FundaScraper:
         self.city = city.lower().replace(" ", "-")
         self.radius = radius
         self.n_pages = n_pages
+        self.setup_driver()
         
-        # List of common user agents
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59'
-        ]
+    def setup_driver(self):
+        """Setup undetected-chromedriver with appropriate options"""
+        options = uc.ChromeOptions()
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
         
-        # Initialize session
-        self.session = requests.Session()
+        # Add random window size to appear more human-like
+        window_sizes = [(1920, 1080), (1366, 768), (1440, 900)]
+        width, height = random.choice(window_sizes)
+        options.add_argument(f'--window-size={width},{height}')
         
-    def _get_headers(self):
-        """Get random headers for the request"""
-        return {
-            'User-Agent': random.choice(self.user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0',
-            'TE': 'Trailers',
-        }
+        # Initialize the driver
+        self.driver = uc.Chrome(options=options)
+        self.driver.set_page_load_timeout(30)
         
     def _get_page(self, page_num):
-        """Get the HTML content of a page"""
+        """Get the HTML content of a page using undetected-chromedriver"""
         url = f"{self.base_url}/agrarische-grond/{self.city}/+{self.radius}/"
         if page_num > 1:
             url += f"?page={page_num}"
@@ -62,28 +59,58 @@ class FundaScraper:
         
         try:
             # Add random delay between requests
-            time.sleep(random.uniform(2, 5))
+            time.sleep(random.uniform(2, 4))
             
-            response = self.session.get(url, headers=self._get_headers())
-            response.raise_for_status()
+            # Load the page
+            self.driver.get(url)
+            
+            # Wait for the content to load
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "search-result"))
+            )
+            
+            # Add random scrolling behavior
+            self._simulate_human_scrolling()
             
             # Check if we hit the verification page
-            if "Je bent bijna op de pagina die je zoekt" in response.text:
+            if "Je bent bijna op de pagina die je zoekt" in self.driver.page_source:
                 logger.warning("Hit verification page. The website is blocking automated access.")
                 logger.warning("Possible solutions:")
                 logger.warning("1. Wait a few minutes before trying again")
                 logger.warning("2. Use a different IP address")
                 logger.warning("3. Try using a proxy service")
                 return None
-                
-            # Log the response status and size
-            logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response size: {len(response.text)} bytes")
             
-            return response.text
-        except requests.RequestException as e:
+            return self.driver.page_source
+            
+        except TimeoutException:
+            logger.error("Timeout waiting for page to load")
+            return None
+        except Exception as e:
             logger.error(f"Error fetching page {page_num}: {str(e)}")
             return None
+            
+    def _simulate_human_scrolling(self):
+        """Simulate human-like scrolling behavior"""
+        try:
+            # Get page height
+            page_height = self.driver.execute_script("return document.body.scrollHeight")
+            
+            # Scroll in random steps
+            current_position = 0
+            while current_position < page_height:
+                # Random scroll amount
+                scroll_amount = random.randint(100, 300)
+                current_position += scroll_amount
+                
+                # Scroll
+                self.driver.execute_script(f"window.scrollTo(0, {current_position});")
+                
+                # Random pause
+                time.sleep(random.uniform(0.1, 0.3))
+                
+        except Exception as e:
+            logger.warning(f"Error during scrolling simulation: {str(e)}")
 
     def _parse_listing(self, element):
         """Parse a single listing element"""
@@ -129,39 +156,48 @@ class FundaScraper:
         logger.info(f"Website: {self.base_url}")
         logger.info(f"Search parameters: City={self.city}, Radius={self.radius}")
         
-        for page in range(1, self.n_pages + 1):
-            logger.info(f"Scraping page {page}")
-            
-            # Get page content
-            html_content = self._get_page(page)
-            if not html_content:
-                continue
+        try:
+            for page in range(1, self.n_pages + 1):
+                logger.info(f"Scraping page {page}")
                 
-            # Parse the page
-            soup = BeautifulSoup(html_content, 'html.parser')
-            listings = soup.find_all("div", class_="search-result")
-            
-            if not listings:
-                logger.info("No more listings found")
-                break
+                # Get page content
+                html_content = self._get_page(page)
+                if not html_content:
+                    continue
+                    
+                # Parse the page
+                soup = BeautifulSoup(html_content, 'html.parser')
+                listings = soup.find_all("div", class_="search-result")
                 
-            # Parse each listing
-            for listing in listings:
-                listing_data = self._parse_listing(listing)
-                if listing_data:
-                    all_listings.append(listing_data)
+                if not listings:
+                    logger.info("No more listings found")
+                    break
+                    
+                # Parse each listing
+                for listing in listings:
+                    listing_data = self._parse_listing(listing)
+                    if listing_data:
+                        all_listings.append(listing_data)
+                
+                logger.info(f"Found {len(listings)} listings on page {page}")
+                
+                # Add random delay between pages
+                if page < self.n_pages:
+                    time.sleep(random.uniform(3, 6))
             
-            logger.info(f"Found {len(listings)} listings on page {page}")
-        
-        # Convert to DataFrame
-        if all_listings:
-            df = pd.DataFrame(all_listings)
-            # Clean up price column if it exists
-            if 'price' in df.columns:
-                df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
-            logger.info(f"Total listings found: {len(df)}")
-            return df
-        return pd.DataFrame()
+            # Convert to DataFrame
+            if all_listings:
+                df = pd.DataFrame(all_listings)
+                # Clean up price column if it exists
+                if 'price' in df.columns:
+                    df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
+                logger.info(f"Total listings found: {len(df)}")
+                return df
+            return pd.DataFrame()
+            
+        finally:
+            # Always close the driver
+            self.driver.quit()
 
 if __name__ == "__main__":
     # Example usage
