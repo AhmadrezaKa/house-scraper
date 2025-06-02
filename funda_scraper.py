@@ -4,8 +4,12 @@ import pandas as pd
 import time
 import logging
 import re
+import random
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 class FundaScraper:
@@ -22,12 +26,29 @@ class FundaScraper:
         self.city = city.lower().replace(" ", "-")
         self.radius = radius
         self.n_pages = n_pages
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        
+        # List of common user agents
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.59'
+        ]
+        
+        # Initialize session
+        self.session = requests.Session()
+        
+    def _get_headers(self):
+        """Get random headers for the request"""
+        return {
+            'User-Agent': random.choice(self.user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Language': 'nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0',
+            'TE': 'Trailers',
         }
         
     def _get_page(self, page_num):
@@ -36,15 +57,29 @@ class FundaScraper:
         if page_num > 1:
             url += f"?page={page_num}"
             
+        logger.info(f"Searching URL: {url}")
+        logger.info(f"Search criteria: City={self.city}, Radius={self.radius}, Page={page_num}")
+        
         try:
-            response = requests.get(url, headers=self.headers)
+            # Add random delay between requests
+            time.sleep(random.uniform(2, 5))
+            
+            response = self.session.get(url, headers=self._get_headers())
             response.raise_for_status()
             
             # Check if we hit the verification page
             if "Je bent bijna op de pagina die je zoekt" in response.text:
-                logger.warning("Hit verification page. Please try again later or use a different IP.")
+                logger.warning("Hit verification page. The website is blocking automated access.")
+                logger.warning("Possible solutions:")
+                logger.warning("1. Wait a few minutes before trying again")
+                logger.warning("2. Use a different IP address")
+                logger.warning("3. Try using a proxy service")
                 return None
                 
+            # Log the response status and size
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response size: {len(response.text)} bytes")
+            
             return response.text
         except requests.RequestException as e:
             logger.error(f"Error fetching page {page_num}: {str(e)}")
@@ -90,6 +125,10 @@ class FundaScraper:
         """Run the scraper and return results as a DataFrame"""
         all_listings = []
         
+        logger.info("Starting scraper for Funda Business agricultural land listings")
+        logger.info(f"Website: {self.base_url}")
+        logger.info(f"Search parameters: City={self.city}, Radius={self.radius}")
+        
         for page in range(1, self.n_pages + 1):
             logger.info(f"Scraping page {page}")
             
@@ -112,8 +151,7 @@ class FundaScraper:
                 if listing_data:
                     all_listings.append(listing_data)
             
-            # Be nice to the server
-            time.sleep(2)
+            logger.info(f"Found {len(listings)} listings on page {page}")
         
         # Convert to DataFrame
         if all_listings:
@@ -121,6 +159,7 @@ class FundaScraper:
             # Clean up price column if it exists
             if 'price' in df.columns:
                 df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
+            logger.info(f"Total listings found: {len(df)}")
             return df
         return pd.DataFrame()
 
