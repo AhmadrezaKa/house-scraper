@@ -3,6 +3,7 @@ import logging
 import re
 import random
 import pandas as pd
+import sys
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -12,6 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,45 +39,59 @@ class FundaScraper:
         
     def setup_driver(self):
         """Setup Chrome driver with anti-detection measures"""
-        options = Options()
-        
-        # Add arguments to make browser less detectable
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-gpu')
-        
-        # Add random window size
-        window_sizes = [(1920, 1080), (1366, 768), (1440, 900)]
-        width, height = random.choice(window_sizes)
-        options.add_argument(f'--window-size={width},{height}')
-        
-        # Add random user agent
-        user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        ]
-        options.add_argument(f'user-agent={random.choice(user_agents)}')
-        
-        # Add experimental options
-        options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        options.add_experimental_option('useAutomationExtension', False)
-        
-        # Initialize the driver
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=options)
-        
-        # Set page load timeout
-        self.driver.set_page_load_timeout(30)
-        
-        # Execute CDP commands to prevent detection
-        self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": random.choice(user_agents)
-        })
-        
-        # Remove webdriver flags
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        try:
+            options = Options()
+            
+            # Add arguments to make browser less detectable
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-gpu')
+            
+            # Add random window size
+            window_sizes = [(1920, 1080), (1366, 768), (1440, 900)]
+            width, height = random.choice(window_sizes)
+            options.add_argument(f'--window-size={width},{height}')
+            
+            # Add random user agent
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            ]
+            options.add_argument(f'user-agent={random.choice(user_agents)}')
+            
+            # Add experimental options
+            options.add_experimental_option('excludeSwitches', ['enable-automation'])
+            options.add_experimental_option('useAutomationExtension', False)
+            
+            # Try to initialize the driver with ChromeDriverManager
+            try:
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=options)
+            except Exception as e:
+                logger.error("Failed to initialize Chrome driver. Please ensure Chrome is installed.")
+                logger.error("Installation instructions:")
+                logger.error("Windows: Download and install Chrome from https://www.google.com/chrome/")
+                logger.error("Linux: Run 'sudo apt-get install google-chrome-stable'")
+                logger.error("macOS: Run 'brew install --cask google-chrome'")
+                raise Exception("Chrome installation not found. Please install Chrome browser first.") from e
+            
+            # Set page load timeout
+            self.driver.set_page_load_timeout(30)
+            
+            # Execute CDP commands to prevent detection
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": random.choice(user_agents)
+            })
+            
+            # Remove webdriver flags
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+        except Exception as e:
+            logger.error(f"Error setting up Chrome driver: {str(e)}")
+            logger.error("Please ensure Chrome is installed and try again.")
+            raise
         
     def _get_page(self, page_num):
         """Get the HTML content of a page using Selenium"""
