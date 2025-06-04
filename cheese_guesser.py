@@ -93,9 +93,29 @@ class CheeseGuesser:
             weight_field = driver.find_element(By.ID, "input_9_5")
             weight_field.send_keys(str(weight))
             
-            # Submit the form
+            # Find submit button
             submit_button = driver.find_element(By.ID, "gform_submit_button_9")
-            submit_button.click()
+            
+            # Scroll to the button
+            driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+            time.sleep(1)  # Wait for scroll to complete
+            
+            # Try multiple methods to click the button
+            try:
+                # Method 1: JavaScript click
+                driver.execute_script("arguments[0].click();", submit_button)
+            except:
+                try:
+                    # Method 2: Wait for button to be clickable and click
+                    WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "gform_submit_button_9"))
+                    )
+                    submit_button.click()
+                except:
+                    # Method 3: Move to element and click
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(driver)
+                    actions.move_to_element(submit_button).click().perform()
             
             # Wait for submission
             time.sleep(2)
