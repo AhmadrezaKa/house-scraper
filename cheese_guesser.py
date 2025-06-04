@@ -167,4 +167,4 @@ class CheeseGuesser:
 if __name__ == "__main__":
     guesser = CheeseGuesser()
     # Try weights from 7000g to 12000g in steps of 100g
-    guesser.run(start_weight=7000, end_weight=12000, step=100) 
+    guesser.run(start_weight=7000, end_weight=12000, step=1) 
