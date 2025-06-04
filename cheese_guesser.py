@@ -20,7 +20,6 @@ class CheeseGuesser:
         """Initialize the Cheese Guesser"""
         self.url = "https://www.gloudemans.nl/kaaswiel/?gf_protect_submission=1"
         self.email = "sharnevesht@gmail.com"  # Fixed email address
-        self.setup_driver()
         
     def setup_driver(self):
         """Setup Chrome driver with anti-detection measures"""
@@ -41,10 +40,12 @@ class CheeseGuesser:
             options.add_experimental_option('excludeSwitches', ['enable-automation'])
             options.add_experimental_option('useAutomationExtension', False)
             
-            self.driver = webdriver.Chrome(options=options)
+            driver = webdriver.Chrome(options=options)
             
             # Set page load timeout
-            self.driver.set_page_load_timeout(30)
+            driver.set_page_load_timeout(30)
+            
+            return driver
             
         except Exception as e:
             logger.error(f"Error setting up Chrome driver: {str(e)}")
@@ -62,34 +63,38 @@ class CheeseGuesser:
 
     def submit_form(self, weight):
         """Submit the form with the given weight"""
+        driver = None
         try:
+            # Create new driver instance for each submission
+            driver = self.setup_driver()
+            
             # Load the page
-            self.driver.get(self.url)
+            driver.get(self.url)
             
             # Wait for the form to load
-            WebDriverWait(self.driver, 10).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "input_9_1"))
             )
             
             # Fill in the form
             # Name
-            name_field = self.driver.find_element(By.ID, "input_9_1")
+            name_field = driver.find_element(By.ID, "input_9_1")
             name_field.send_keys(self.generate_random_name())
             
             # Phone
-            phone_field = self.driver.find_element(By.ID, "input_9_3")
+            phone_field = driver.find_element(By.ID, "input_9_3")
             phone_field.send_keys(self.generate_random_phone())
             
             # Email
-            email_field = self.driver.find_element(By.ID, "input_9_4")
+            email_field = driver.find_element(By.ID, "input_9_4")
             email_field.send_keys(self.email)
             
             # Weight (in textarea)
-            weight_field = self.driver.find_element(By.ID, "input_9_5")
+            weight_field = driver.find_element(By.ID, "input_9_5")
             weight_field.send_keys(str(weight))
             
             # Submit the form
-            submit_button = self.driver.find_element(By.ID, "gform_submit_button_9")
+            submit_button = driver.find_element(By.ID, "gform_submit_button_9")
             submit_button.click()
             
             # Wait for submission
@@ -101,20 +106,27 @@ class CheeseGuesser:
         except Exception as e:
             logger.error(f"Error submitting form: {str(e)}")
             return False
+        finally:
+            if driver:
+                driver.quit()
 
-    def run(self, start_weight=7000, end_weight=12000, num_submissions=5000):
-        """Run the cheese weight guessing script"""
+    def run(self, start_weight=7000, end_weight=12000, step=100):
+        """Run the cheese weight guessing script with systematic weight increments"""
         try:
             logger.info(f"Starting cheese weight guessing script")
             logger.info(f"Range: {start_weight}g to {end_weight}g")
-            logger.info(f"Number of submissions: {num_submissions}")
+            logger.info(f"Step size: {step}g")
             logger.info(f"Using email: {self.email}")
             
             successful_submissions = 0
+            total_attempts = 0
             
-            for i in range(num_submissions):
-                # Generate a random weight within the range
-                weight = random.randint(start_weight, end_weight)
+            # Generate list of weights to try
+            weights = range(start_weight, end_weight + 1, step)
+            total_weights = len(weights)
+            
+            for i, weight in enumerate(weights, 1):
+                total_attempts += 1
                 
                 if self.submit_form(weight):
                     successful_submissions += 1
@@ -123,14 +135,16 @@ class CheeseGuesser:
                 time.sleep(random.uniform(2, 4))
                 
                 # Log progress
-                if (i + 1) % 100 == 0:
-                    logger.info(f"Progress: {i + 1}/{num_submissions} submissions completed")
+                if i % 10 == 0:
+                    logger.info(f"Progress: {i}/{total_weights} weights tried")
+                    logger.info(f"Successful submissions: {successful_submissions}/{total_attempts}")
             
-            logger.info(f"Completed {successful_submissions} successful submissions")
+            logger.info(f"Completed {successful_submissions} successful submissions out of {total_attempts} attempts")
             
-        finally:
-            self.driver.quit()
+        except Exception as e:
+            logger.error(f"Error in main loop: {str(e)}")
 
 if __name__ == "__main__":
     guesser = CheeseGuesser()
-    guesser.run() 
+    # Try weights from 7000g to 12000g in steps of 100g
+    guesser.run(start_weight=7000, end_weight=12000, step=100) 
