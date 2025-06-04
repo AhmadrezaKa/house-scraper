@@ -89,34 +89,44 @@ class FundaScraper:
     def parse_listing(self, element):
         """Parse a single listing element"""
         try:
-            # Extract basic information
-            title = element.find("h2", class_="search-result__header-title")
-            price = element.find("span", class_="search-result-price")
-            location = element.find("h4", class_="search-result__header-subtitle")
+            # Find the content inner div
+            content_inner = element.find("div", class_="search-result-content-inner")
+            if not content_inner:
+                return None
+
+            # Extract title and location
+            header_title = content_inner.find("h2", class_="search-result__header-title")
+            header_subtitle = content_inner.find("h4", class_="search-result__header-subtitle")
             
-            # Extract details
-            details = {}
-            detail_elements = element.find_all("li", class_="search-result-kenmerken-item")
-            for detail in detail_elements:
-                label = detail.find("span", class_="search-result-kenmerken-label")
-                value = detail.find("span", class_="search-result-kenmerken-value")
-                if label and value:
-                    details[label.text.strip()] = value.text.strip()
+            # Extract price
+            price_div = content_inner.find("div", class_="search-result-info-price")
+            price = price_div.find("span", class_="search-result-price") if price_div else None
             
-            # Extract area if available
+            # Extract area
             area = None
-            if "details" in details:
-                area_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:ha|m²)', details["details"])
-                if area_match:
-                    area = area_match.group(1)
+            kenmerken = content_inner.find("ul", class_="search-result-kenmerken")
+            if kenmerken:
+                area_span = kenmerken.find("span", title="Oppervlakte")
+                if area_span:
+                    area = area_span.text.strip()
+            
+            # Extract realtor
+            realtor = content_inner.find("a", class_="search-result-makelaar")
+            realtor_name = realtor.find("span", class_="search-result-makelaar-name") if realtor else None
+            
+            # Extract URL
+            url = None
+            title_link = content_inner.find("a", attrs={"data-object-url-tracking": "resultlist"})
+            if title_link:
+                url = title_link.get("href")
             
             return {
-                "title": title.text.strip() if title else "N/A",
+                "title": header_title.text.strip() if header_title else "N/A",
+                "type": header_subtitle.text.strip() if header_subtitle else "N/A",
                 "price": price.text.strip() if price else "N/A",
-                "location": location.text.strip() if location else "N/A",
                 "area": area,
-                "details": details,
-                "url": element.find("a")["href"] if element.find("a") else None
+                "realtor": realtor_name.text.strip() if realtor_name else "N/A",
+                "url": url
             }
         except Exception as e:
             logger.error(f"Error parsing listing: {str(e)}")
@@ -160,9 +170,6 @@ class FundaScraper:
         # Convert to DataFrame
         if all_listings:
             df = pd.DataFrame(all_listings)
-            # Clean up price column if it exists
-            if 'price' in df.columns:
-                df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
             logger.info(f"Total listings found: {len(df)}")
             return df
         return pd.DataFrame()
