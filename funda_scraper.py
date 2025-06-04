@@ -14,6 +14,7 @@ from selenium.common.exceptions import TimeoutException
 import os
 import sys
 import platform
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(
@@ -109,7 +110,7 @@ class FundaScraper:
             # Wait for the content to load
             try:
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "search-result"))
+                    EC.presence_of_element_located((By.CLASS_NAME, "search-result-main"))
                 )
             except TimeoutException:
                 # If the main class isn't found, try to find any content
@@ -199,11 +200,17 @@ class FundaScraper:
             # Extract area and other info
             info_div = content_inner.find("div", class_="search-result-info")
             area = None
+            location = None
             if info_div:
                 # Look for area in the info div
                 area_span = info_div.find("span", title="Oppervlakte")
                 if area_span:
                     area = area_span.text.strip()
+                
+                # Look for location
+                location_span = info_div.find("span", title="Locatie")
+                if location_span:
+                    location = location_span.text.strip()
             
             # Extract URL
             url = None
@@ -213,12 +220,22 @@ class FundaScraper:
                 if url and not url.startswith("http"):
                     url = f"{self.base_url}{url}"
             
+            # Extract listing ID from URL
+            listing_id = None
+            if url:
+                match = re.search(r'/(\d+)/', url)
+                if match:
+                    listing_id = match.group(1)
+            
             # Log the extracted data
             listing_data = {
+                "listing_id": listing_id,
                 "title": header_title.text.strip() if header_title else "N/A",
                 "price": price.text.strip() if price else "N/A",
                 "area": area,
-                "url": url
+                "location": location,
+                "url": url,
+                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             logger.debug(f"Extracted listing data: {listing_data}")
             
@@ -274,6 +291,13 @@ class FundaScraper:
             if all_listings:
                 df = pd.DataFrame(all_listings)
                 logger.info(f"Total listings found: {len(df)}")
+                
+                # Save to CSV with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"funda_listings_{self.city}_{timestamp}.csv"
+                df.to_csv(filename, index=False, encoding='utf-8')
+                logger.info(f"Saved {len(df)} listings to {filename}")
+                
                 return df
             return pd.DataFrame()
             
