@@ -191,98 +191,67 @@ class FundaScraper:
                 logger.warning(f"Timeout waiting for listing page to load: {url}")
                 return {}
             
-            # Add random scrolling behavior
-            self._simulate_human_scrolling()
-            
-            # Get the page content
+            # Get page content
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             
             # Initialize details dictionary
             details = {}
             
-            # Get object description
-            description_div = soup.find("div", class_="object-description")
-            if description_div:
-                details['description'] = description_div.text.strip()
-            
-            # Get object characteristics
-            characteristics = {}
-            kenmerken_list = soup.find_all("div", class_="object-kenmerken-group")
-            for group in kenmerken_list:
-                group_title = group.find("h3")
-                if group_title:
-                    group_name = group_title.text.strip()
-                    items = group.find_all("li")
-                    for item in items:
-                        label = item.find("span", class_="object-kenmerken-label")
-                        value = item.find("span", class_="object-kenmerken-value")
-                        if label and value:
-                            characteristics[f"{group_name}_{label.text.strip()}"] = value.text.strip()
-            
-            details['characteristics'] = characteristics
-            
-            # Get object location details
-            location_div = soup.find("div", class_="object-buurt")
-            if location_div:
-                details['neighborhood'] = location_div.text.strip()
-            
-            # Get object features
-            features = []
-            features_list = soup.find_all("div", class_="object-features")
-            for feature_group in features_list:
-                items = feature_group.find_all("li")
-                for item in items:
-                    features.append(item.text.strip())
-            
-            details['features'] = features
-            
-            # Get object images
-            images = []
-            image_container = soup.find("div", class_="object-media-fotos")
-            if image_container:
-                img_tags = image_container.find_all("img")
-                for img in img_tags:
-                    src = img.get("src")
-                    if src:
-                        if not src.startswith("http"):
-                            src = f"{self.base_url}{src}"
-                        images.append(src)
-            
-            details['images'] = images
-            
-            # Get object documents
-            documents = []
-            docs_container = soup.find("div", class_="object-documenten")
-            if docs_container:
-                doc_links = docs_container.find_all("a")
-                for link in doc_links:
-                    href = link.get("href")
-                    if href:
-                        if not href.startswith("http"):
-                            href = f"{self.base_url}{href}"
-                        documents.append({
-                            'name': link.text.strip(),
-                            'url': href
-                        })
-            
-            details['documents'] = documents
-            
-            # Get object broker information
-            broker_info = {}
-            broker_div = soup.find("div", class_="object-verkoop")
-            if broker_div:
-                broker_name = broker_div.find("h3")
-                if broker_name:
-                    broker_info['name'] = broker_name.text.strip()
+            # 1. Basic Information
+            header = soup.find("div", class_="object-header__content")
+            if header:
+                # Title and Location
+                title_div = header.find("h1")
+                if title_div:
+                    title = title_div.find("span", class_="object-header__title")
+                    subtitle = title_div.find("span", class_="object-header__subtitle")
+                    if title:
+                        details['title'] = title.text.strip()
+                    if subtitle:
+                        details['location'] = subtitle.text.strip()
                 
-                broker_details = broker_div.find_all("li")
-                for detail in broker_details:
-                    label = detail.find("span", class_="object-kenmerken-label")
-                    value = detail.find("span", class_="object-kenmerken-value")
-                    if label and value:
-                        broker_info[label.text.strip()] = value.text.strip()
+                # Price
+                price_div = header.find("div", class_="object-header__pricing")
+                if price_div:
+                    price = price_div.find("strong", class_="object-header__price")
+                    if price:
+                        details['price'] = price.text.strip()
             
-            details['broker_info'] = broker_info
+            # 2. Description
+            description_section = soup.find("section", class_="object-description")
+            if description_section:
+                description_body = description_section.find("div", class_="object-description-body")
+                if description_body:
+                    details['description'] = description_body.text.strip()
+            
+            # 3. Property Characteristics
+            kenmerken_body = soup.find("div", class_="object-kenmerken-body")
+            if kenmerken_body:
+                current_section = None
+                for element in kenmerken_body.children:
+                    if element.name == 'h3':
+                        current_section = element.text.strip()
+                    elif element.name == 'dl':
+                        # Process the definition list
+                        for dt, dd in zip(element.find_all('dt'), element.find_all('dd')):
+                            label = dt.text.strip()
+                            value = dd.text.strip()
+                            
+                            # Clean up the value (remove extra whitespace and newlines)
+                            value = ' '.join(value.split())
+                            
+                            # Store in details with section prefix
+                            if current_section:
+                                key = f"{current_section}_{label}"
+                            else:
+                                key = label
+                            details[key] = value
+                            
+                            # Special handling for kadastrale gegevens
+                            if current_section == "Kadastrale gegevens":
+                                kadaster_title = dt.find("div", class_="kadaster-title")
+                                if kadaster_title:
+                                    details['kadaster_title'] = kadaster_title.text.strip()
             
             return details
             
@@ -293,9 +262,6 @@ class FundaScraper:
     def parse_listing(self, element):
         """Parse a single listing element"""
         try:
-            # Log the element HTML for debugging
-            logger.debug(f"Parsing element: {element}")
-            
             # Find the content div
             content = element.find("div", class_="search-result-content")
             if not content:
@@ -349,7 +315,7 @@ class FundaScraper:
             # Get detailed information from the listing page
             details = self.get_listing_details(url) if url else {}
             
-            # Log the extracted data
+            # Combine basic and detailed information
             listing_data = {
                 "listing_id": listing_id,
                 "title": header_title.text.strip() if header_title else "N/A",
@@ -357,22 +323,13 @@ class FundaScraper:
                 "area": area,
                 "location": location,
                 "url": url,
-                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "description": details.get('description', 'N/A'),
-                "neighborhood": details.get('neighborhood', 'N/A'),
-                "features": '; '.join(details.get('features', [])),
-                "image_urls": '; '.join(details.get('images', [])),
-                "broker_name": details.get('broker_info', {}).get('name', 'N/A'),
-                "broker_phone": details.get('broker_info', {}).get('Telefoon', 'N/A'),
-                "broker_email": details.get('broker_info', {}).get('E-mail', 'N/A')
+                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
-            # Add all characteristics
-            for key, value in details.get('characteristics', {}).items():
-                listing_data[key] = value
+            # Add all details from the listing page
+            listing_data.update(details)
             
-            logger.debug(f"Extracted listing data: {listing_data}")
-            
+            logger.info(f"Successfully scraped listing: {listing_data['title']}")
             return listing_data
             
         except Exception as e:
@@ -414,7 +371,6 @@ class FundaScraper:
                     listing_data = self.parse_listing(listing)
                     if listing_data:
                         all_listings.append(listing_data)
-                        logger.info(f"Successfully scraped listing: {listing_data['title']}")
                 
                 logger.info(f"Found {len(listings)} listings on page {page}")
                 
