@@ -12,7 +12,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.os_manager import ChromeType
 
 # Set up logging
 logging.basicConfig(
@@ -62,26 +61,9 @@ class FundaScraper:
             options.add_experimental_option('excludeSwitches', ['enable-automation'])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Try to initialize the driver with ChromeDriverManager
             try:
-                # Get the Chrome version
-                chrome_version = None
-                try:
-                    import winreg
-                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
-                    chrome_version = winreg.QueryValueEx(key, "version")[0]
-                except:
-                    logger.warning("Could not determine Chrome version automatically")
-                
-                # Initialize ChromeDriverManager with specific version if available
-                if chrome_version:
-                    logger.info(f"Detected Chrome version: {chrome_version}")
-                    driver_manager = ChromeDriverManager(version=chrome_version)
-                else:
-                    driver_manager = ChromeDriverManager()
-                
-                # Get the driver path
-                driver_path = driver_manager.install()
+                # Initialize ChromeDriverManager
+                driver_path = ChromeDriverManager().install()
                 logger.info(f"ChromeDriver path: {driver_path}")
                 
                 # Create service with explicit path
