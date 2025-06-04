@@ -235,23 +235,39 @@ class FundaScraper:
                     if element.name == 'h3':
                         current_section = element.text.strip()
                     elif element.name == 'dl':
-                        # Process the definition list
-                        for dt, dd in zip(element.find_all('dt'), element.find_all('dd')):
-                            label = dt.text.strip()
-                            value = dd.text.strip()
-                            
-                            # Clean up the value (remove extra whitespace and newlines)
-                            value = ' '.join(value.split())
-                            
-                            # Special handling for kadastrale gegevens
-                            if current_section == "Kadastrale gegevens":
-                                if "Kadastrale kaart" in label:
-                                    # This is a kadastrale code
-                                    kadastrale_codes.append(value)
-                                elif "Eigendomssituatie" in label:
-                                    # This is an eigendomssituatie
-                                    eigendomssituaties.append(value)
-                            else:
+                        # Special handling for kadastrale gegevens
+                        if current_section == "Kadastrale gegevens":
+                            # Find all kadastrale group headers
+                            group_headers = element.find_all("dt", class_="object-kenmerken-group-header")
+                            for header in group_headers:
+                                # Get kadastrale code
+                                kadaster_title = header.find("div", class_="kadaster-title")
+                                if not kadaster_title:
+                                    kadaster_title = header.find("div", class_="")
+                                if kadaster_title:
+                                    kadastrale_code = kadaster_title.text.strip()
+                                    if kadastrale_code:
+                                        kadastrale_codes.append(kadastrale_code)
+                                        
+                                        # Find corresponding eigendomssituatie
+                                        next_dd = header.find_next_sibling("dd", class_="object-kenmerken-group-list")
+                                        if next_dd:
+                                            eigendom_dt = next_dd.find("dt", string="Eigendomssituatie")
+                                            if eigendom_dt:
+                                                eigendom_dd = eigendom_dt.find_next_sibling("dd")
+                                                if eigendom_dd:
+                                                    eigendom_span = eigendom_dd.find("span")
+                                                    if eigendom_span:
+                                                        eigendomssituaties.append(eigendom_span.text.strip())
+                        else:
+                            # Process other sections normally
+                            for dt, dd in zip(element.find_all('dt'), element.find_all('dd')):
+                                label = dt.text.strip()
+                                value = dd.text.strip()
+                                
+                                # Clean up the value (remove extra whitespace and newlines)
+                                value = ' '.join(value.split())
+                                
                                 # Store in details with section prefix
                                 if current_section:
                                     key = f"{current_section}_{label}"
