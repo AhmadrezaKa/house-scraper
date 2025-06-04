@@ -107,9 +107,29 @@ class FundaScraper:
             self.driver.get(url)
             
             # Wait for the content to load
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "search-result"))
-            )
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "search-result"))
+                )
+            except TimeoutException:
+                # If the main class isn't found, try to find any content
+                logger.info("Main search results not found, checking page content...")
+                page_source = self.driver.page_source
+                logger.info(f"Page title: {self.driver.title}")
+                
+                # Log some page content for debugging
+                logger.info("First 500 characters of page content:")
+                logger.info(page_source[:500])
+                
+                # Check for common elements
+                if "search-result" in page_source:
+                    logger.info("Found 'search-result' in page source")
+                if "object-search" in page_source:
+                    logger.info("Found 'object-search' in page source")
+                if "search-results" in page_source:
+                    logger.info("Found 'search-results' in page source")
+                
+                return page_source
             
             # Add random scrolling behavior
             self._simulate_human_scrolling()
@@ -153,38 +173,73 @@ class FundaScraper:
     def parse_listing(self, element):
         """Parse a single listing element"""
         try:
-            # Find the content inner div
-            content_inner = element.find("div", class_="search-result-content-inner")
+            # Log the element HTML for debugging
+            logger.debug(f"Parsing element: {element}")
+            
+            # Try different possible class names for the content
+            content_inner = (
+                element.find("div", class_="search-result-content-inner") or
+                element.find("div", class_="object-search-item") or
+                element.find("div", class_="search-results-item")
+            )
+            
             if not content_inner:
+                logger.debug("No content inner div found")
                 return None
 
-            # Extract title and location
-            header_title = content_inner.find("h2", class_="search-result__header-title")
-            header_subtitle = content_inner.find("h4", class_="search-result__header-subtitle")
+            # Extract title and location with multiple possible class names
+            header_title = (
+                content_inner.find("h2", class_="search-result__header-title") or
+                content_inner.find("h2", class_="object-search-item__title") or
+                content_inner.find("h3", class_="search-results-item__title")
+            )
             
-            # Extract price
-            price_div = content_inner.find("div", class_="search-result-info-price")
+            header_subtitle = (
+                content_inner.find("h4", class_="search-result__header-subtitle") or
+                content_inner.find("h4", class_="object-search-item__subtitle") or
+                content_inner.find("h4", class_="search-results-item__subtitle")
+            )
+            
+            # Extract price with multiple possible class names
+            price_div = (
+                content_inner.find("div", class_="search-result-info-price") or
+                content_inner.find("div", class_="object-search-item__price") or
+                content_inner.find("div", class_="search-results-item__price")
+            )
             price = price_div.find("span", class_="search-result-price") if price_div else None
             
-            # Extract area
+            # Extract area with multiple possible class names
             area = None
-            kenmerken = content_inner.find("ul", class_="search-result-kenmerken")
+            kenmerken = (
+                content_inner.find("ul", class_="search-result-kenmerken") or
+                content_inner.find("ul", class_="object-search-item__features") or
+                content_inner.find("ul", class_="search-results-item__features")
+            )
             if kenmerken:
                 area_span = kenmerken.find("span", title="Oppervlakte")
                 if area_span:
                     area = area_span.text.strip()
             
-            # Extract realtor
-            realtor = content_inner.find("a", class_="search-result-makelaar")
+            # Extract realtor with multiple possible class names
+            realtor = (
+                content_inner.find("a", class_="search-result-makelaar") or
+                content_inner.find("a", class_="object-search-item__realtor") or
+                content_inner.find("a", class_="search-results-item__realtor")
+            )
             realtor_name = realtor.find("span", class_="search-result-makelaar-name") if realtor else None
             
-            # Extract URL
+            # Extract URL with multiple possible class names
             url = None
-            title_link = content_inner.find("a", attrs={"data-object-url-tracking": "resultlist"})
+            title_link = (
+                content_inner.find("a", attrs={"data-object-url-tracking": "resultlist"}) or
+                content_inner.find("a", class_="object-search-item__link") or
+                content_inner.find("a", class_="search-results-item__link")
+            )
             if title_link:
                 url = title_link.get("href")
             
-            return {
+            # Log the extracted data
+            listing_data = {
                 "title": header_title.text.strip() if header_title else "N/A",
                 "type": header_subtitle.text.strip() if header_subtitle else "N/A",
                 "price": price.text.strip() if price else "N/A",
@@ -192,6 +247,10 @@ class FundaScraper:
                 "realtor": realtor_name.text.strip() if realtor_name else "N/A",
                 "url": url
             }
+            logger.debug(f"Extracted listing data: {listing_data}")
+            
+            return listing_data
+            
         except Exception as e:
             logger.error(f"Error parsing listing: {str(e)}")
             return None
@@ -214,10 +273,20 @@ class FundaScraper:
                     
                 # Parse the page
                 soup = BeautifulSoup(html_content, 'html.parser')
-                listings = soup.find_all("div", class_="search-result")
+                
+                # Try different possible class names for listings
+                listings = (
+                    soup.find_all("div", class_="search-result") or
+                    soup.find_all("div", class_="object-search-item") or
+                    soup.find_all("div", class_="search-results-item")
+                )
                 
                 if not listings:
-                    logger.info("No more listings found")
+                    logger.info("No listings found with any of the expected class names")
+                    # Log the page structure for debugging
+                    logger.info("Page structure:")
+                    for div in soup.find_all("div", class_=True):
+                        logger.info(f"Found div with class: {div['class']}")
                     break
                     
                 # Parse each listing
