@@ -45,101 +45,82 @@ def analyze_listing_page(url):
             # Get page content
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             
-            # Analyze page structure
-            logger.info("\n=== PAGE STRUCTURE ANALYSIS ===")
+            # Initialize data dictionary
+            listing_data = {}
             
             # 1. Basic Information
-            logger.info("\n1. Basic Information:")
-            title = soup.find("h1", class_="object-header__title")
-            if title:
-                logger.info(f"Title: {title.text.strip()}")
+            logger.info("\n=== BASIC INFORMATION ===")
+            header = soup.find("div", class_="object-header__content")
+            if header:
+                # Title and Location
+                title_div = header.find("h1")
+                if title_div:
+                    title = title_div.find("span", class_="object-header__title")
+                    subtitle = title_div.find("span", class_="object-header__subtitle")
+                    if title:
+                        listing_data['title'] = title.text.strip()
+                        logger.info(f"Title: {title.text.strip()}")
+                    if subtitle:
+                        listing_data['location'] = subtitle.text.strip()
+                        logger.info(f"Location: {subtitle.text.strip()}")
+                
+                # Price
+                price_div = header.find("div", class_="object-header__pricing")
+                if price_div:
+                    price = price_div.find("strong", class_="object-header__price")
+                    if price:
+                        listing_data['price'] = price.text.strip()
+                        logger.info(f"Price: {price.text.strip()}")
             
-            # 2. Price Information
-            logger.info("\n2. Price Information:")
-            price = soup.find("div", class_="object-primary__price")
-            if price:
-                logger.info(f"Price: {price.text.strip()}")
+            # 2. Description
+            logger.info("\n=== DESCRIPTION ===")
+            description_section = soup.find("section", class_="object-description")
+            if description_section:
+                description_body = description_section.find("div", class_="object-description-body")
+                if description_body:
+                    listing_data['description'] = description_body.text.strip()
+                    logger.info(f"Description: {description_body.text.strip()}")
             
-            # 3. Location Information
-            logger.info("\n3. Location Information:")
-            location = soup.find("div", class_="object-buurt")
-            if location:
-                logger.info(f"Location: {location.text.strip()}")
+            # 3. Property Characteristics
+            logger.info("\n=== PROPERTY CHARACTERISTICS ===")
+            kenmerken_body = soup.find("div", class_="object-kenmerken-body")
+            if kenmerken_body:
+                current_section = None
+                for element in kenmerken_body.children:
+                    if element.name == 'h3':
+                        current_section = element.text.strip()
+                        logger.info(f"\n--- {current_section} ---")
+                    elif element.name == 'dl':
+                        # Process the definition list
+                        for dt, dd in zip(element.find_all('dt'), element.find_all('dd')):
+                            label = dt.text.strip()
+                            value = dd.text.strip()
+                            
+                            # Clean up the value (remove extra whitespace and newlines)
+                            value = ' '.join(value.split())
+                            
+                            # Store in listing_data with section prefix
+                            if current_section:
+                                key = f"{current_section}_{label}"
+                            else:
+                                key = label
+                            listing_data[key] = value
+                            
+                            logger.info(f"{label}: {value}")
+                            
+                            # Special handling for kadastrale gegevens
+                            if current_section == "Kadastrale gegevens":
+                                kadaster_title = dt.find("div", class_="kadaster-title")
+                                if kadaster_title:
+                                    listing_data['kadaster_title'] = kadaster_title.text.strip()
+                                    logger.info(f"Kadaster Title: {kadaster_title.text.strip()}")
             
-            # 4. Property Characteristics
-            logger.info("\n4. Property Characteristics:")
-            kenmerken = soup.find_all("div", class_="object-kenmerken-group")
-            for group in kenmerken:
-                group_title = group.find("h3")
-                if group_title:
-                    logger.info(f"\nGroup: {group_title.text.strip()}")
-                    items = group.find_all("li")
-                    for item in items:
-                        label = item.find("span", class_="object-kenmerken-label")
-                        value = item.find("span", class_="object-kenmerken-value")
-                        if label and value:
-                            logger.info(f"  {label.text.strip()}: {value.text.strip()}")
+            # Print all collected data
+            logger.info("\n=== COLLECTED DATA ===")
+            for key, value in listing_data.items():
+                logger.info(f"{key}: {value}")
             
-            # 5. Description
-            logger.info("\n5. Description:")
-            description = soup.find("div", class_="object-description")
-            if description:
-                logger.info(f"Description: {description.text.strip()}")
-            
-            # 6. Features
-            logger.info("\n6. Features:")
-            features = soup.find_all("div", class_="object-features")
-            for feature_group in features:
-                items = feature_group.find_all("li")
-                for item in items:
-                    logger.info(f"  {item.text.strip()}")
-            
-            # 7. Images
-            logger.info("\n7. Images:")
-            images = soup.find_all("div", class_="object-media-fotos")
-            for img_group in images:
-                img_tags = img_group.find_all("img")
-                for img in img_tags:
-                    src = img.get("src")
-                    if src:
-                        logger.info(f"  Image URL: {src}")
-            
-            # 8. Documents
-            logger.info("\n8. Documents:")
-            documents = soup.find_all("div", class_="object-documenten")
-            for doc_group in documents:
-                links = doc_group.find_all("a")
-                for link in links:
-                    logger.info(f"  Document: {link.text.strip()} - {link.get('href')}")
-            
-            # 9. Broker Information
-            logger.info("\n9. Broker Information:")
-            broker = soup.find("div", class_="object-verkoop")
-            if broker:
-                broker_name = broker.find("h3")
-                if broker_name:
-                    logger.info(f"Broker: {broker_name.text.strip()}")
-                details = broker.find_all("li")
-                for detail in details:
-                    label = detail.find("span", class_="object-kenmerken-label")
-                    value = detail.find("span", class_="object-kenmerken-value")
-                    if label and value:
-                        logger.info(f"  {label.text.strip()}: {value.text.strip()}")
-            
-            # 10. Map Information
-            logger.info("\n10. Map Information:")
-            map_div = soup.find("div", class_="object-kaart")
-            if map_div:
-                logger.info("Map data available")
-                # You might want to extract coordinates or other map-related data here
-            
-            # 11. All Available Classes
-            logger.info("\n11. All Available Classes:")
-            all_classes = set()
-            for tag in soup.find_all(class_=True):
-                all_classes.update(tag['class'])
-            for class_name in sorted(all_classes):
-                logger.info(f"  {class_name}")
+            return listing_data
             
         finally:
             driver.quit()
@@ -148,6 +129,7 @@ def analyze_listing_page(url):
         logger.error(f"Error analyzing page: {str(e)}")
         if 'driver' in locals():
             driver.quit()
+        return None
 
 if __name__ == "__main__":
     # Test URL
