@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import logging
+import re
 
 # Set up logging
 logging.basicConfig(
@@ -12,19 +13,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class FundaScraper:
-    def __init__(self):
-        """Initialize the Funda Scraper for agricultural land"""
-        self.base_url = "https://www.fundainbusiness.nl/agrarische-grond/"
+    def __init__(self, city="den-bosch", radius="50km"):
+        """Initialize the Funda Scraper for agricultural land
+        
+        Args:
+            city (str): City to search in (e.g., "den-bosch", "amsterdam")
+            radius (str): Search radius (e.g., "50km")
+        """
+        self.base_url = "https://www.fundainbusiness.nl"
+        self.city = city.lower().replace(" ", "-")
+        self.radius = radius
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
         }
 
     def get_page(self, page_num=1):
         """Get the HTML content of a page"""
-        url = f"{self.base_url}?page={page_num}" if page_num > 1 else self.base_url
+        url = f"{self.base_url}/agrarische-grond/{self.city}/+{self.radius}/"
+        if page_num > 1:
+            url += f"?page={page_num}"
+            
+        logger.info(f"Searching URL: {url}")
+        
         try:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
+            
+            # Check if we hit the verification page
+            if "Je bent bijna op de pagina die je zoekt" in response.text:
+                logger.warning("Hit verification page. The website is blocking automated access.")
+                return None
+                
             return response.text
         except requests.RequestException as e:
             logger.error(f"Error fetching page {page_num}: {str(e)}")
@@ -47,10 +70,18 @@ class FundaScraper:
                 if label and value:
                     details[label.text.strip()] = value.text.strip()
             
+            # Extract area if available
+            area = None
+            if "details" in details:
+                area_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:ha|m²)', details["details"])
+                if area_match:
+                    area = area_match.group(1)
+            
             return {
                 "title": title.text.strip() if title else "N/A",
                 "price": price.text.strip() if price else "N/A",
                 "location": location.text.strip() if location else "N/A",
+                "area": area,
                 "details": details,
                 "url": element.find("a")["href"] if element.find("a") else None
             }
@@ -63,6 +94,7 @@ class FundaScraper:
         all_listings = []
         
         logger.info("Starting scraper for Funda Business agricultural land listings")
+        logger.info(f"Search criteria: City={self.city}, Radius={self.radius}")
         
         for page in range(1, n_pages + 1):
             logger.info(f"Scraping page {page}")
@@ -95,13 +127,19 @@ class FundaScraper:
         # Convert to DataFrame
         if all_listings:
             df = pd.DataFrame(all_listings)
+            # Clean up price column if it exists
+            if 'price' in df.columns:
+                df['price'] = df['price'].str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
             logger.info(f"Total listings found: {len(df)}")
             return df
         return pd.DataFrame()
 
 if __name__ == "__main__":
     # Example usage
-    scraper = FundaScraper()
+    scraper = FundaScraper(
+        city="den-bosch",
+        radius="50km"
+    )
     df = scraper.scrape(n_pages=1)
     print("\nFirst few listings:")
     print(df.head()) 
