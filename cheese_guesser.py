@@ -68,28 +68,28 @@ class CheeseGuesser:
             
             # Wait for the form to load
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.NAME, "input_1"))
+                EC.presence_of_element_located((By.ID, "input_9_1"))
             )
             
             # Fill in the form
             # Name
-            name_field = self.driver.find_element(By.NAME, "input_1")
+            name_field = self.driver.find_element(By.ID, "input_9_1")
             name_field.send_keys(self.generate_random_name())
             
             # Phone
-            phone_field = self.driver.find_element(By.NAME, "input_2")
+            phone_field = self.driver.find_element(By.ID, "input_9_3")
             phone_field.send_keys(self.generate_random_phone())
             
-            # Email (using fixed address)
-            email_field = self.driver.find_element(By.NAME, "input_3")
+            # Email
+            email_field = self.driver.find_element(By.ID, "input_9_4")
             email_field.send_keys(self.email)
             
-            # Weight
-            weight_field = self.driver.find_element(By.NAME, "input_4")
+            # Weight (in textarea)
+            weight_field = self.driver.find_element(By.ID, "input_9_5")
             weight_field.send_keys(str(weight))
             
             # Submit the form
-            submit_button = self.driver.find_element(By.CLASS_NAME, "gform_submit_button")
+            submit_button = self.driver.find_element(By.ID, "gform_submit_button_9")
             submit_button.click()
             
             # Wait for submission
