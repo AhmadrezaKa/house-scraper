@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import logging
+import random
 import re
 
 # Set up logging
@@ -23,12 +24,34 @@ class FundaScraper:
         self.base_url = "https://www.fundainbusiness.nl"
         self.city = city.lower().replace(" ", "-")
         self.radius = radius
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        
+        # List of common user agents
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+        ]
+        
+        # Initialize session for persistent cookies
+        self.session = requests.Session()
+        
+    def _get_random_headers(self):
+        """Generate random headers for each request"""
+        return {
+            'User-Agent': random.choice(self.user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Language': 'nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1'
         }
 
     def get_page(self, page_num=1):
@@ -40,8 +63,18 @@ class FundaScraper:
         logger.info(f"Searching URL: {url}")
         
         try:
-            response = requests.get(url, headers=self.headers)
+            # Add random delay before request (between 2 and 5 seconds)
+            time.sleep(random.uniform(2, 5))
+            
+            # Get headers for this request
+            headers = self._get_random_headers()
+            
+            # Make the request using the session
+            response = self.session.get(url, headers=headers)
             response.raise_for_status()
+            
+            # Add random delay after request (between 1 and 3 seconds)
+            time.sleep(random.uniform(1, 3))
             
             # Check if we hit the verification page
             if "Je bent bijna op de pagina die je zoekt" in response.text:
@@ -120,9 +153,9 @@ class FundaScraper:
             
             logger.info(f"Found {len(listings)} listings on page {page}")
             
-            # Add delay between pages
+            # Add longer random delay between pages (between 5 and 10 seconds)
             if page < n_pages:
-                time.sleep(2)
+                time.sleep(random.uniform(5, 10))
         
         # Convert to DataFrame
         if all_listings:
