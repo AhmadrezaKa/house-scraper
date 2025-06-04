@@ -228,6 +228,9 @@ class FundaScraper:
             kenmerken_body = soup.find("div", class_="object-kenmerken-body")
             if kenmerken_body:
                 current_section = None
+                kadastrale_codes = []
+                eigendomssituaties = []
+                
                 for element in kenmerken_body.children:
                     if element.name == 'h3':
                         current_section = element.text.strip()
@@ -240,18 +243,27 @@ class FundaScraper:
                             # Clean up the value (remove extra whitespace and newlines)
                             value = ' '.join(value.split())
                             
-                            # Store in details with section prefix
-                            if current_section:
-                                key = f"{current_section}_{label}"
-                            else:
-                                key = label
-                            details[key] = value
-                            
                             # Special handling for kadastrale gegevens
                             if current_section == "Kadastrale gegevens":
-                                kadaster_title = dt.find("div", class_="kadaster-title")
-                                if kadaster_title:
-                                    details['kadaster_title'] = kadaster_title.text.strip()
+                                if "Kadastrale kaart" in label:
+                                    # This is a kadastrale code
+                                    kadastrale_codes.append(value)
+                                elif "Eigendomssituatie" in label:
+                                    # This is an eigendomssituatie
+                                    eigendomssituaties.append(value)
+                            else:
+                                # Store in details with section prefix
+                                if current_section:
+                                    key = f"{current_section}_{label}"
+                                else:
+                                    key = label
+                                details[key] = value
+                
+                # After processing all elements, store aggregated kadastrale data
+                if kadastrale_codes:
+                    details['kadastrale_code'] = '-'.join(kadastrale_codes)
+                if eigendomssituaties:
+                    details['eigendomssituatie'] = '-'.join(eigendomssituaties)
             
             return details
             
