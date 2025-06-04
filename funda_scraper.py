@@ -171,6 +171,125 @@ class FundaScraper:
         except Exception as e:
             logger.warning(f"Error during scrolling simulation: {str(e)}")
 
+    def get_listing_details(self, url):
+        """Get detailed information from a listing's page"""
+        try:
+            logger.info(f"Getting details for listing: {url}")
+            
+            # Add random delay before request
+            time.sleep(random.uniform(2, 4))
+            
+            # Load the page
+            self.driver.get(url)
+            
+            # Wait for the content to load
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "object-primary"))
+                )
+            except TimeoutException:
+                logger.warning(f"Timeout waiting for listing page to load: {url}")
+                return {}
+            
+            # Add random scrolling behavior
+            self._simulate_human_scrolling()
+            
+            # Get the page content
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Initialize details dictionary
+            details = {}
+            
+            # Get object description
+            description_div = soup.find("div", class_="object-description")
+            if description_div:
+                details['description'] = description_div.text.strip()
+            
+            # Get object characteristics
+            characteristics = {}
+            kenmerken_list = soup.find_all("div", class_="object-kenmerken-group")
+            for group in kenmerken_list:
+                group_title = group.find("h3")
+                if group_title:
+                    group_name = group_title.text.strip()
+                    items = group.find_all("li")
+                    for item in items:
+                        label = item.find("span", class_="object-kenmerken-label")
+                        value = item.find("span", class_="object-kenmerken-value")
+                        if label and value:
+                            characteristics[f"{group_name}_{label.text.strip()}"] = value.text.strip()
+            
+            details['characteristics'] = characteristics
+            
+            # Get object location details
+            location_div = soup.find("div", class_="object-buurt")
+            if location_div:
+                details['neighborhood'] = location_div.text.strip()
+            
+            # Get object features
+            features = []
+            features_list = soup.find_all("div", class_="object-features")
+            for feature_group in features_list:
+                items = feature_group.find_all("li")
+                for item in items:
+                    features.append(item.text.strip())
+            
+            details['features'] = features
+            
+            # Get object images
+            images = []
+            image_container = soup.find("div", class_="object-media-fotos")
+            if image_container:
+                img_tags = image_container.find_all("img")
+                for img in img_tags:
+                    src = img.get("src")
+                    if src:
+                        if not src.startswith("http"):
+                            src = f"{self.base_url}{src}"
+                        images.append(src)
+            
+            details['images'] = images
+            
+            # Get object documents
+            documents = []
+            docs_container = soup.find("div", class_="object-documenten")
+            if docs_container:
+                doc_links = docs_container.find_all("a")
+                for link in doc_links:
+                    href = link.get("href")
+                    if href:
+                        if not href.startswith("http"):
+                            href = f"{self.base_url}{href}"
+                        documents.append({
+                            'name': link.text.strip(),
+                            'url': href
+                        })
+            
+            details['documents'] = documents
+            
+            # Get object broker information
+            broker_info = {}
+            broker_div = soup.find("div", class_="object-verkoop")
+            if broker_div:
+                broker_name = broker_div.find("h3")
+                if broker_name:
+                    broker_info['name'] = broker_name.text.strip()
+                
+                broker_details = broker_div.find_all("li")
+                for detail in broker_details:
+                    label = detail.find("span", class_="object-kenmerken-label")
+                    value = detail.find("span", class_="object-kenmerken-value")
+                    if label and value:
+                        broker_info[label.text.strip()] = value.text.strip()
+            
+            details['broker_info'] = broker_info
+            
+            return details
+            
+        except Exception as e:
+            logger.error(f"Error getting listing details: {str(e)}")
+            return {}
+
     def parse_listing(self, element):
         """Parse a single listing element"""
         try:
@@ -227,6 +346,9 @@ class FundaScraper:
                 if match:
                     listing_id = match.group(1)
             
+            # Get detailed information from the listing page
+            details = self.get_listing_details(url) if url else {}
+            
             # Log the extracted data
             listing_data = {
                 "listing_id": listing_id,
@@ -235,8 +357,20 @@ class FundaScraper:
                 "area": area,
                 "location": location,
                 "url": url,
-                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "description": details.get('description', 'N/A'),
+                "neighborhood": details.get('neighborhood', 'N/A'),
+                "features": '; '.join(details.get('features', [])),
+                "image_urls": '; '.join(details.get('images', [])),
+                "broker_name": details.get('broker_info', {}).get('name', 'N/A'),
+                "broker_phone": details.get('broker_info', {}).get('Telefoon', 'N/A'),
+                "broker_email": details.get('broker_info', {}).get('E-mail', 'N/A')
             }
+            
+            # Add all characteristics
+            for key, value in details.get('characteristics', {}).items():
+                listing_data[key] = value
+            
             logger.debug(f"Extracted listing data: {listing_data}")
             
             return listing_data
@@ -280,6 +414,7 @@ class FundaScraper:
                     listing_data = self.parse_listing(listing)
                     if listing_data:
                         all_listings.append(listing_data)
+                        logger.info(f"Successfully scraped listing: {listing_data['title']}")
                 
                 logger.info(f"Found {len(listings)} listings on page {page}")
                 
