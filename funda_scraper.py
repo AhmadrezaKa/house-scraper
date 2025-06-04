@@ -11,7 +11,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
+import os
+import sys
+import platform
 
 # Set up logging
 logging.basicConfig(
@@ -62,15 +64,8 @@ class FundaScraper:
             options.add_experimental_option('useAutomationExtension', False)
             
             try:
-                # Initialize ChromeDriverManager
-                driver_path = ChromeDriverManager().install()
-                logger.info(f"ChromeDriver path: {driver_path}")
-                
-                # Create service with explicit path
-                service = Service(executable_path=driver_path)
-                
-                # Initialize the driver
-                self.driver = webdriver.Chrome(service=service, options=options)
+                # Try to use Chrome directly
+                self.driver = webdriver.Chrome(options=options)
                 
             except Exception as e:
                 logger.error("Failed to initialize Chrome driver. Please ensure Chrome is installed.")
