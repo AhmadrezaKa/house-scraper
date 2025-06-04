@@ -6,7 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, ElementClickInterceptedException
 
 # Set up logging
 logging.basicConfig(
@@ -42,44 +42,69 @@ def analyze_listing_page(url):
                 EC.presence_of_element_located((By.CLASS_NAME, "object-primary"))
             )
             
-            # Get page content
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
-            
             # Initialize data dictionary
             listing_data = {}
             
             # 1. Basic Information
             logger.info("\n=== BASIC INFORMATION ===")
-            header = soup.find("div", class_="object-header__content")
+            header = driver.find_element(By.CLASS_NAME, "object-header__content")
             if header:
                 # Title and Location
-                title_div = header.find("h1")
-                if title_div:
-                    title = title_div.find("span", class_="object-header__title")
-                    subtitle = title_div.find("span", class_="object-header__subtitle")
-                    if title:
-                        listing_data['title'] = title.text.strip()
-                        logger.info(f"Title: {title.text.strip()}")
-                    if subtitle:
-                        listing_data['location'] = subtitle.text.strip()
-                        logger.info(f"Location: {subtitle.text.strip()}")
+                title_div = header.find_element(By.TAG_NAME, "h1")
+                title = title_div.find_element(By.CLASS_NAME, "object-header__title")
+                subtitle = title_div.find_element(By.CLASS_NAME, "object-header__subtitle")
+                
+                listing_data['title'] = title.text.strip()
+                listing_data['location'] = subtitle.text.strip()
+                logger.info(f"Title: {title.text.strip()}")
+                logger.info(f"Location: {subtitle.text.strip()}")
                 
                 # Price
-                price_div = header.find("div", class_="object-header__pricing")
-                if price_div:
-                    price = price_div.find("strong", class_="object-header__price")
-                    if price:
-                        listing_data['price'] = price.text.strip()
-                        logger.info(f"Price: {price.text.strip()}")
+                try:
+                    price_div = header.find_element(By.CLASS_NAME, "object-header__pricing")
+                    price = price_div.find_element(By.CLASS_NAME, "object-header__price")
+                    listing_data['price'] = price.text.strip()
+                    logger.info(f"Price: {price.text.strip()}")
+                except:
+                    logger.info("No price information found")
             
             # 2. Description
             logger.info("\n=== DESCRIPTION ===")
-            description_section = soup.find("section", class_="object-description")
-            if description_section:
-                description_body = description_section.find("div", class_="object-description-body")
-                if description_body:
-                    listing_data['description'] = description_body.text.strip()
-                    logger.info(f"Description: {description_body.text.strip()}")
+            try:
+                # Find and click the expand button
+                expand_button = driver.find_element(By.CLASS_NAME, "object-description-open-button")
+                logger.info("Found expand button, clicking to show full description...")
+                
+                # Scroll to the button
+                driver.execute_script("arguments[0].scrollIntoView(true);", expand_button)
+                time.sleep(1)  # Wait for scroll to complete
+                
+                # Click the button
+                expand_button.click()
+                
+                # Wait for the description to expand
+                time.sleep(2)  # Wait for animation
+                
+                # Get the updated page content
+                soup = BeautifulSoup(driver.page_source, 'html.parser')
+                description_section = soup.find("section", class_="object-description")
+                if description_section:
+                    description_body = description_section.find("div", class_="object-description-body")
+                    if description_body:
+                        listing_data['description'] = description_body.text.strip()
+                        logger.info(f"Full Description: {description_body.text.strip()}")
+            except Exception as e:
+                logger.error(f"Error getting full description: {str(e)}")
+                # Try to get the truncated description as fallback
+                try:
+                    description_section = soup.find("section", class_="object-description")
+                    if description_section:
+                        description_body = description_section.find("div", class_="object-description-body")
+                        if description_body:
+                            listing_data['description'] = description_body.text.strip()
+                            logger.info(f"Truncated Description: {description_body.text.strip()}")
+                except:
+                    logger.error("Could not get description at all")
             
             # 3. Property Characteristics
             logger.info("\n=== PROPERTY CHARACTERISTICS ===")
