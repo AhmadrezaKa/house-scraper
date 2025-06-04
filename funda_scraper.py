@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
 
 # Set up logging
 logging.basicConfig(
@@ -61,8 +62,41 @@ class FundaScraper:
             options.add_experimental_option('excludeSwitches', ['enable-automation'])
             options.add_experimental_option('useAutomationExtension', False)
             
-            # Initialize the driver
-            self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            # Try to initialize the driver with ChromeDriverManager
+            try:
+                # Get the Chrome version
+                chrome_version = None
+                try:
+                    import winreg
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
+                    chrome_version = winreg.QueryValueEx(key, "version")[0]
+                except:
+                    logger.warning("Could not determine Chrome version automatically")
+                
+                # Initialize ChromeDriverManager with specific version if available
+                if chrome_version:
+                    logger.info(f"Detected Chrome version: {chrome_version}")
+                    driver_manager = ChromeDriverManager(version=chrome_version)
+                else:
+                    driver_manager = ChromeDriverManager()
+                
+                # Get the driver path
+                driver_path = driver_manager.install()
+                logger.info(f"ChromeDriver path: {driver_path}")
+                
+                # Create service with explicit path
+                service = Service(executable_path=driver_path)
+                
+                # Initialize the driver
+                self.driver = webdriver.Chrome(service=service, options=options)
+                
+            except Exception as e:
+                logger.error("Failed to initialize Chrome driver. Please ensure Chrome is installed.")
+                logger.error("Installation instructions:")
+                logger.error("Windows: Download and install Chrome from https://www.google.com/chrome/")
+                logger.error("Linux: Run 'sudo apt-get install google-chrome-stable'")
+                logger.error("macOS: Run 'brew install --cask google-chrome'")
+                raise Exception("Chrome installation not found. Please install Chrome browser first.") from e
             
             # Set page load timeout
             self.driver.set_page_load_timeout(30)
@@ -77,6 +111,7 @@ class FundaScraper:
             
         except Exception as e:
             logger.error(f"Error setting up Chrome driver: {str(e)}")
+            logger.error("Please ensure Chrome is installed and try again.")
             raise
 
     def get_page(self, page_num=1):
