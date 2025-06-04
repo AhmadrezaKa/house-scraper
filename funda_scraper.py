@@ -176,75 +176,48 @@ class FundaScraper:
             # Log the element HTML for debugging
             logger.debug(f"Parsing element: {element}")
             
-            # Try different possible class names for the content
-            content_inner = (
-                element.find("div", class_="search-result-content-inner") or
-                element.find("div", class_="object-search-item") or
-                element.find("div", class_="search-results-item")
-            )
-            
+            # Find the content div
+            content = element.find("div", class_="search-result-content")
+            if not content:
+                logger.debug("No content div found")
+                return None
+
+            # Find the inner content
+            content_inner = content.find("div", class_="search-result-content-inner")
             if not content_inner:
                 logger.debug("No content inner div found")
                 return None
 
-            # Extract title and location with multiple possible class names
-            header_title = (
-                content_inner.find("h2", class_="search-result__header-title") or
-                content_inner.find("h2", class_="object-search-item__title") or
-                content_inner.find("h3", class_="search-results-item__title")
-            )
+            # Extract title and location
+            header_title_col = content_inner.find("div", class_="search-result__header-title-col")
+            header_title = header_title_col.find("h2") if header_title_col else None
             
-            header_subtitle = (
-                content_inner.find("h4", class_="search-result__header-subtitle") or
-                content_inner.find("h4", class_="object-search-item__subtitle") or
-                content_inner.find("h4", class_="search-results-item__subtitle")
-            )
+            # Extract price
+            price_div = content_inner.find("div", class_="search-result-info-price")
+            price = price_div.find("span") if price_div else None
             
-            # Extract price with multiple possible class names
-            price_div = (
-                content_inner.find("div", class_="search-result-info-price") or
-                content_inner.find("div", class_="object-search-item__price") or
-                content_inner.find("div", class_="search-results-item__price")
-            )
-            price = price_div.find("span", class_="search-result-price") if price_div else None
-            
-            # Extract area with multiple possible class names
+            # Extract area and other info
+            info_div = content_inner.find("div", class_="search-result-info")
             area = None
-            kenmerken = (
-                content_inner.find("ul", class_="search-result-kenmerken") or
-                content_inner.find("ul", class_="object-search-item__features") or
-                content_inner.find("ul", class_="search-results-item__features")
-            )
-            if kenmerken:
-                area_span = kenmerken.find("span", title="Oppervlakte")
+            if info_div:
+                # Look for area in the info div
+                area_span = info_div.find("span", title="Oppervlakte")
                 if area_span:
                     area = area_span.text.strip()
             
-            # Extract realtor with multiple possible class names
-            realtor = (
-                content_inner.find("a", class_="search-result-makelaar") or
-                content_inner.find("a", class_="object-search-item__realtor") or
-                content_inner.find("a", class_="search-results-item__realtor")
-            )
-            realtor_name = realtor.find("span", class_="search-result-makelaar-name") if realtor else None
-            
-            # Extract URL with multiple possible class names
+            # Extract URL
             url = None
-            title_link = (
-                content_inner.find("a", attrs={"data-object-url-tracking": "resultlist"}) or
-                content_inner.find("a", class_="object-search-item__link") or
-                content_inner.find("a", class_="search-results-item__link")
-            )
+            title_link = header_title_col.find("a") if header_title_col else None
             if title_link:
                 url = title_link.get("href")
+                if url and not url.startswith("http"):
+                    url = f"{self.base_url}{url}"
             
             # Log the extracted data
             listing_data = {
                 "title": header_title.text.strip() if header_title else "N/A",
-                "type": header_subtitle.text.strip() if header_subtitle else "N/A",
                 "price": price.text.strip() if price else "N/A",
                 "area": area,
-                "realtor": realtor_name.text.strip() if realtor_name else "N/A",
                 "url": url
             }
             logger.debug(f"Extracted listing data: {listing_data}")
@@ -274,15 +247,11 @@ class FundaScraper:
                 # Parse the page
                 soup = BeautifulSoup(html_content, 'html.parser')
                 
-                # Try different possible class names for listings
-                listings = (
-                    soup.find_all("div", class_="search-result") or
-                    soup.find_all("div", class_="object-search-item") or
-                    soup.find_all("div", class_="search-results-item")
-                )
+                # Find all listing elements
+                listings = soup.find_all("div", class_="search-result-main")
                 
                 if not listings:
-                    logger.info("No listings found with any of the expected class names")
+                    logger.info("No listings found")
                     # Log the page structure for debugging
                     logger.info("Page structure:")
                     for div in soup.find_all("div", class_=True):
