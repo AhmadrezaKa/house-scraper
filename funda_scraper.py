@@ -96,7 +96,7 @@ class FundaScraper:
         """Get the HTML content of a page using Selenium"""
         url = f"{self.base_url}/agrarische-grond/{self.city}/+{self.radius}/"
         if page_num > 1:
-            url += f"?page={page_num}"
+            url += f"p{page_num}/"
             
         logger.info(f"Searching URL: {url}")
         
@@ -148,7 +148,7 @@ class FundaScraper:
         except Exception as e:
             logger.error(f"Error fetching page {page_num}: {str(e)}")
             return None
-            
+
     def _simulate_human_scrolling(self):
         """Simulate human-like scrolling behavior"""
         try:
@@ -364,7 +364,38 @@ class FundaScraper:
             logger.error(f"Error parsing listing: {str(e)}")
             return None
 
-    def scrape(self, n_pages=1):
+    def get_total_pages(self):
+        """Get the total number of pages from pagination"""
+        try:
+            # Wait for pagination to load
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "pagination-pages"))
+            )
+            
+            # Find all page links
+            page_links = self.driver.find_elements(By.CSS_SELECTOR, ".pagination-pages a")
+            
+            if not page_links:
+                logger.info("No pagination found, assuming single page")
+                return 1
+            
+            # Get the highest page number
+            max_page = 1
+            for link in page_links:
+                try:
+                    page_num = int(link.get_attribute("data-pagination-page"))
+                    max_page = max(max_page, page_num)
+                except (ValueError, TypeError):
+                    continue
+            
+            logger.info(f"Found {max_page} total pages")
+            return max_page
+            
+        except Exception as e:
+            logger.error(f"Error getting total pages: {str(e)}")
+            return 1
+
+    def scrape(self, n_pages=None):
         """Scrape listings from Funda in Business"""
         all_listings = []
         
@@ -372,8 +403,31 @@ class FundaScraper:
         logger.info(f"Search criteria: City={self.city}, Radius={self.radius}")
         
         try:
-            for page in range(1, n_pages + 1):
-                logger.info(f"Scraping page {page}")
+            # Get first page to determine total pages
+            html_content = self.get_page(1)
+            if not html_content:
+                return pd.DataFrame()
+            
+            # Get total number of pages
+            total_pages = self.get_total_pages()
+            if n_pages is not None:
+                total_pages = min(total_pages, n_pages)
+            
+            logger.info(f"Will scrape {total_pages} pages")
+            
+            # Process first page
+            soup = BeautifulSoup(html_content, 'html.parser')
+            listings = soup.find_all("div", class_="search-result-main")
+            
+            if listings:
+                for listing in listings:
+                    listing_data = self.parse_listing(listing)
+                    if listing_data:
+                        all_listings.append(listing_data)
+            
+            # Process remaining pages
+            for page in range(2, total_pages + 1):
+                logger.info(f"Scraping page {page} of {total_pages}")
                 
                 # Get page content
                 html_content = self.get_page(page)
@@ -387,11 +441,7 @@ class FundaScraper:
                 listings = soup.find_all("div", class_="search-result-main")
                 
                 if not listings:
-                    logger.info("No listings found")
-                    # Log the page structure for debugging
-                    logger.info("Page structure:")
-                    for div in soup.find_all("div", class_=True):
-                        logger.info(f"Found div with class: {div['class']}")
+                    logger.info(f"No listings found on page {page}")
                     break
                     
                 # Parse each listing
@@ -403,7 +453,7 @@ class FundaScraper:
                 logger.info(f"Found {len(listings)} listings on page {page}")
                 
                 # Add random delay between pages
-                if page < n_pages:
+                if page < total_pages:
                     time.sleep(random.uniform(3, 6))
             
             # Convert to DataFrame
@@ -430,6 +480,7 @@ if __name__ == "__main__":
         city="den-bosch",
         radius="50km"
     )
-    df = scraper.scrape(n_pages=1)
+    # Scrape all pages
+    df = scraper.scrape()
     print("\nFirst few listings:")
     print(df.head()) 
