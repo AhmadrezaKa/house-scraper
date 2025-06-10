@@ -316,17 +316,10 @@ class FundaScraper:
             price_div = content_inner.find("div", class_="search-result-info-price")
             price = price_div.find("span") if price_div else None
             
-            # Extract area and other info
-            info_div = content_inner.find("div", class_="search-result-info")
-            area = None
+            # Extract location
             location = None
+            info_div = content_inner.find("div", class_="search-result-info")
             if info_div:
-                # Look for area in the info div
-                area_span = info_div.find("span", title="Oppervlakte")
-                if area_span:
-                    area = area_span.text.strip()
-                
-                # Look for location
                 location_span = info_div.find("span", title="Locatie")
                 if location_span:
                     location = location_span.text.strip()
@@ -339,10 +332,10 @@ class FundaScraper:
                 if url and not url.startswith("http"):
                     url = f"{self.base_url}{url}"
             
-            # Extract listing ID from URL
+            # Extract listing ID from URL using the pattern object-XXXXX-
             listing_id = None
             if url:
-                match = re.search(r'/(\d+)/', url)
+                match = re.search(r'object-(\d+)-', url)
                 if match:
                     listing_id = match.group(1)
             
@@ -355,7 +348,6 @@ class FundaScraper:
                 "title": header_title.text.strip() if header_title else "N/A",
                 "category": category if category else "N/A",
                 "price": price.text.strip() if price else "N/A",
-                "area": area,
                 "location": location,
                 "url": url,
                 "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -466,6 +458,10 @@ class FundaScraper:
             # Convert to DataFrame
             if all_listings:
                 df = pd.DataFrame(all_listings)
+                
+                # Clean column names by replacing spaces with underscores
+                df.columns = [col.replace(' ', '_') for col in df.columns]
+                
                 logger.info(f"Total listings found: {len(df)}")
                 
                 # Save to CSV with timestamp
@@ -484,10 +480,11 @@ class FundaScraper:
 if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
-        city="provincie-noord-brabant",
-        radius="0"
+        city="nuland",
+        radius="+1km"
     )
     # Scrape all pages
     df = scraper.scrape()
     print("\nFirst few listings:")
     print(df.head()) 
+    
