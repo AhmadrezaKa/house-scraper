@@ -3,6 +3,7 @@ import logging
 import random
 import re
 import pandas as pd
+import sqlite3
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -24,16 +25,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class FundaScraper:
-    def __init__(self, city="den-bosch", radius="50km"):
+    def __init__(self, city="den-bosch", radius="50km", db_path="F:/Databases/Funda/Funda.db"):
         """Initialize the Funda Scraper for agricultural land
         
         Args:
             city (str): City to search in (e.g., "den-bosch", "amsterdam")
             radius (str): Search radius (e.g., "50km")
+            db_path (str): Path to SQLite database
         """
         self.base_url = "https://www.fundainbusiness.nl"
         self.city = city.lower().replace(" ", "-")
         self.radius = radius
+        self.db_path = db_path
         self.setup_driver()
         
     def setup_driver(self):
@@ -394,6 +397,26 @@ class FundaScraper:
             logger.error(f"Error getting total pages: {str(e)}")
             return 1
 
+    def append_to_database(self, df):
+        """Append the scraped data to SQLite database"""
+        try:
+            # Connect to SQLite database
+            conn = sqlite3.connect(self.db_path)
+            
+            # Clean column names to match database columns
+            df.columns = [col.replace(' ', '_') for col in df.columns]
+            
+            # Append data to the Listings table
+            df.to_sql('Listings', conn, if_exists='append', index=False)
+            
+            logger.info(f"Successfully appended {len(df)} records to database")
+            
+        except Exception as e:
+            logger.error(f"Error appending to database: {str(e)}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
     def scrape(self, n_pages=None):
         """Scrape listings from Funda in Business"""
         all_listings = []
@@ -470,6 +493,9 @@ class FundaScraper:
                 df.to_csv(filename, index=False, encoding='utf-8')
                 logger.info(f"Saved {len(df)} listings to {filename}")
                 
+                # Append to database
+                self.append_to_database(df)
+                
                 return df
             return pd.DataFrame()
             
@@ -481,7 +507,8 @@ if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
         city="nuland",
-        radius="+1km"
+        radius="+1km",
+        db_path="F:/Databases/Funda/Funda.db"
     )
     # Scrape all pages
     df = scraper.scrape()
