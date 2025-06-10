@@ -94,7 +94,7 @@ class FundaScraper:
 
     def get_page(self, page_num=1):
         """Get the HTML content of a page using Selenium"""
-        url = f"{self.base_url}/agrarische-grond/{self.city}/+{self.radius}/"
+        url = f"{self.base_url}/alle-bedrijfsaanbod/{self.city}/+{self.radius}/"
         if page_num > 1:
             url += f"p{page_num}/"
             
@@ -306,6 +306,12 @@ class FundaScraper:
             header_title_col = content_inner.find("div", class_="search-result__header-title-col")
             header_title = header_title_col.find("h2") if header_title_col else None
             
+            # Extract category
+            category = None
+            category_h4 = content_inner.find("h4", class_="search-result__header-subtitle")
+            if category_h4:
+                category = category_h4.text.strip()
+            
             # Extract price
             price_div = content_inner.find("div", class_="search-result-info-price")
             price = price_div.find("span") if price_div else None
@@ -347,6 +353,7 @@ class FundaScraper:
             listing_data = {
                 "listing_id": listing_id,
                 "title": header_title.text.strip() if header_title else "N/A",
+                "category": category if category else "N/A",
                 "price": price.text.strip() if price else "N/A",
                 "area": area,
                 "location": location,
@@ -477,8 +484,8 @@ class FundaScraper:
 if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
-        city="den-bosch",
-        radius="50km"
+        city="provincie-noord-brabant",
+        radius="0"
     )
     # Scrape all pages
     df = scraper.scrape()
