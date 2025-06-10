@@ -506,8 +506,8 @@ class FundaScraper:
 if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
-        city="nuland",
-        radius="+1km",
+        city="provincie-noord-brabant",
+        radius="0km",
         db_path="F:/Databases/Funda/Funda.db"
     )
     # Scrape all pages
