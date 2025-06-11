@@ -353,7 +353,7 @@ class FundaScraper:
                 "price": price.text.strip() if price else "N/A",
                 "location": location,
                 "url": url,
-                "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "initial_scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
             # Add all details from the listing page
@@ -398,21 +398,76 @@ class FundaScraper:
             return 1
 
     def append_to_database(self, df):
-        """Append the scraped data to SQLite database"""
+        """Append the scraped data to SQLite database with scraping history"""
         try:
             # Connect to SQLite database
             conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             
             # Clean column names to match database columns
             df.columns = [col.replace(' ', '_') for col in df.columns]
             
-            # Append data to the Listings table
-            df.to_sql('Listings', conn, if_exists='append', index=False)
+            # Rename scraped_date to initial_scraped_date
+            if 'scraped_date' in df.columns:
+                df = df.rename(columns={'scraped_date': 'initial_scraped_date'})
             
-            logger.info(f"Successfully appended {len(df)} records to database")
+            # Create table if it doesn't exist with new columns
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS Listings (
+                    listing_id TEXT PRIMARY KEY,
+                    initial_scraped_date TEXT,
+                    scrapelog TEXT,
+                    title TEXT,
+                    category TEXT,
+                    price TEXT,
+                    location TEXT,
+                    url TEXT
+                )
+            ''')
+            
+            # Get current timestamp for new scrapes
+            current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Process each row
+            for _, row in df.iterrows():
+                # Check if listing already exists
+                cursor.execute('SELECT listing_id, scrapelog FROM Listings WHERE listing_id = ?', 
+                             (row['listing_id'],))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # Update existing listing with new scrape log
+                    existing_log = existing[1] if existing[1] else ""
+                    new_log = f"{existing_log}\n{current_timestamp}" if existing_log else current_timestamp
+                    
+                    # Update the scrapelog
+                    cursor.execute('''
+                        UPDATE Listings 
+                        SET scrapelog = ?
+                        WHERE listing_id = ?
+                    ''', (new_log, row['listing_id']))
+                else:
+                    # Insert new listing
+                    row_dict = row.to_dict()
+                    row_dict['initial_scraped_date'] = current_timestamp
+                    row_dict['scrapelog'] = ""
+                    
+                    columns = ', '.join(row_dict.keys())
+                    placeholders = ', '.join(['?' for _ in row_dict])
+                    values = tuple(row_dict.values())
+                    
+                    cursor.execute(f'''
+                        INSERT INTO Listings ({columns})
+                        VALUES ({placeholders})
+                    ''', values)
+            
+            conn.commit()
+            logger.info(f"Successfully updated database with {len(df)} records")
             
         except Exception as e:
-            logger.error(f"Error appending to database: {str(e)}")
+            logger.error(f"Error updating database: {str(e)}")
+            if 'conn' in locals():
+                conn.rollback()
         finally:
             if 'conn' in locals():
                 conn.close()
@@ -506,9 +561,9 @@ class FundaScraper:
 if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
-        city="provincie-noord-brabant",
-        radius="0km",
-        db_path="F:/Databases/Funda/Funda.db"
+        city="nuland",
+        radius="+2km",
+        db_path="C:/Ahmadreza_Files/TEMP/Test_DB/funda_test_DB.db"
     )
     # Scrape all pages
     df = scraper.scrape()
