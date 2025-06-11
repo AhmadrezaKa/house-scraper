@@ -444,17 +444,34 @@ class FundaScraper:
                     cursor.execute('UPDATE Listings SET scrapelog = ? WHERE listing_id = ?',
                                  (new_log, row['listing_id']))
                 else:
-                    # Insert new listing
-                    row_dict = row.to_dict()
-                    row_dict['initial_scraped_date'] = current_timestamp
-                    row_dict['scrapelog'] = ""
+                    # For new listings, ensure all required columns are present
+                    new_listing = {
+                        'listing_id': row['listing_id'],
+                        'initial_scraped_date': current_timestamp,
+                        'scrapelog': "",
+                        'title': row.get('title', 'N/A'),
+                        'category': row.get('category', 'N/A'),
+                        'price': row.get('price', 'N/A'),
+                        'location': row.get('location', 'N/A'),
+                        'url': row.get('url', 'N/A')
+                    }
                     
-                    # Create the INSERT query dynamically
-                    columns = ', '.join(row_dict.keys())
-                    placeholders = ', '.join(['?' for _ in row_dict])
-                    values = tuple(row_dict.values())
-                    
-                    cursor.execute(f'INSERT INTO Listings ({columns}) VALUES ({placeholders})', values)
+                    # Insert new listing with all required columns
+                    cursor.execute('''
+                        INSERT INTO Listings (
+                            listing_id, initial_scraped_date, scrapelog, 
+                            title, category, price, location, url
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        new_listing['listing_id'],
+                        new_listing['initial_scraped_date'],
+                        new_listing['scrapelog'],
+                        new_listing['title'],
+                        new_listing['category'],
+                        new_listing['price'],
+                        new_listing['location'],
+                        new_listing['url']
+                    ))
             
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
@@ -658,7 +675,7 @@ if __name__ == "__main__":
     # Example usage
     scraper = FundaScraper(
         city="nuland",
-        radius="+2km",
+        radius="3km",
         db_path="C:/Ahmadreza_Files/TEMP/Test_DB/funda_test_DB.db"
     )
     # Scrape all pages
