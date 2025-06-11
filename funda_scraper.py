@@ -570,10 +570,45 @@ class FundaScraper:
                         }
                         all_listings.append(listing_data)
                     else:
-                        # Parse full listing details for new listings
-                        listing_data = self.parse_listing(listing)
-                        if listing_data:
-                            all_listings.append(listing_data)
+                        # For new listings, get all details
+                        logger.info(f"Found new listing: {url}")
+                        # Get detailed information from the listing page
+                        details = self.get_listing_details(url)
+                        
+                        # Get basic information from the listing element
+                        category = None
+                        category_h4 = content_inner.find("h4", class_="search-result__header-subtitle")
+                        if category_h4:
+                            category = category_h4.text.strip()
+                        
+                        price = None
+                        price_div = content_inner.find("div", class_="search-result-info-price")
+                        if price_div:
+                            price_span = price_div.find("span")
+                            if price_span:
+                                price = price_span.text.strip()
+                        
+                        location = None
+                        info_div = content_inner.find("div", class_="search-result-info")
+                        if info_div:
+                            location_span = info_div.find("span", title="Locatie")
+                            if location_span:
+                                location = location_span.text.strip()
+                        
+                        # Combine all information
+                        listing_data = {
+                            "listing_id": listing_id,
+                            "title": title_link.text.strip() if title_link else "N/A",
+                            "category": category if category else "N/A",
+                            "price": price if price else "N/A",
+                            "location": location if location else "N/A",
+                            "url": url,
+                            "initial_scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        # Add all details from the listing page
+                        listing_data.update(details)
+                        all_listings.append(listing_data)
             
             # Process remaining pages
             for page in range(2, total_pages + 1):
@@ -635,10 +670,45 @@ class FundaScraper:
                         }
                         all_listings.append(listing_data)
                     else:
-                        # Parse full listing details for new listings
-                        listing_data = self.parse_listing(listing)
-                        if listing_data:
-                            all_listings.append(listing_data)
+                        # For new listings, get all details
+                        logger.info(f"Found new listing: {url}")
+                        # Get detailed information from the listing page
+                        details = self.get_listing_details(url)
+                        
+                        # Get basic information from the listing element
+                        category = None
+                        category_h4 = content_inner.find("h4", class_="search-result__header-subtitle")
+                        if category_h4:
+                            category = category_h4.text.strip()
+                        
+                        price = None
+                        price_div = content_inner.find("div", class_="search-result-info-price")
+                        if price_div:
+                            price_span = price_div.find("span")
+                            if price_span:
+                                price = price_span.text.strip()
+                        
+                        location = None
+                        info_div = content_inner.find("div", class_="search-result-info")
+                        if info_div:
+                            location_span = info_div.find("span", title="Locatie")
+                            if location_span:
+                                location = location_span.text.strip()
+                        
+                        # Combine all information
+                        listing_data = {
+                            "listing_id": listing_id,
+                            "title": title_link.text.strip() if title_link else "N/A",
+                            "category": category if category else "N/A",
+                            "price": price if price else "N/A",
+                            "location": location if location else "N/A",
+                            "url": url,
+                            "initial_scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        # Add all details from the listing page
+                        listing_data.update(details)
+                        all_listings.append(listing_data)
                 
                 logger.info(f"Found {len(listings)} listings on page {page}")
                 
