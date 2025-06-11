@@ -412,29 +412,37 @@ class FundaScraper:
             # Clean column names to match database columns
             df.columns = [col.replace(' ', '_') for col in df.columns]
             
-            # Rename scraped_date to initial_scraped_date
-            if 'scraped_date' in df.columns:
-                df = df.rename(columns={'scraped_date': 'initial_scraped_date'})
-            
-            # Get all unique columns from the DataFrame
-            all_columns = set(df.columns)
-            
-            # Create table if it doesn't exist with all possible columns
-            create_table_sql = '''
+            # Create main listings table if it doesn't exist
+            create_listings_table = '''
                 CREATE TABLE IF NOT EXISTS Listings (
                     listing_id TEXT PRIMARY KEY,
-                    initial_scraped_date TEXT,
-                    scrapelog TEXT
+                    title TEXT,
+                    category TEXT,
+                    price TEXT,
+                    location TEXT,
+                    url TEXT
             '''
             
             # Add all other columns as TEXT
-            for col in all_columns:
-                if col not in ['listing_id', 'initial_scraped_date', 'scrapelog']:
-                    create_table_sql += f',\n    {col} TEXT'
+            for col in df.columns:
+                if col not in ['listing_id', 'title', 'category', 'price', 'location', 'url', 'initial_scraped_date', 'scrapelog']:
+                    create_listings_table += f',\n    {col} TEXT'
             
-            create_table_sql += '\n)'
+            create_listings_table += '\n)'
             
-            cursor.execute(create_table_sql)
+            # Create scraping history table if it doesn't exist
+            create_history_table = '''
+                CREATE TABLE IF NOT EXISTS ScrapingHistory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    listing_id TEXT,
+                    scrape_date TEXT,
+                    FOREIGN KEY (listing_id) REFERENCES Listings(listing_id)
+                )
+            '''
+            
+            # Execute table creation
+            cursor.execute(create_listings_table)
+            cursor.execute(create_history_table)
             
             # Get current timestamp for new scrapes
             current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -442,29 +450,30 @@ class FundaScraper:
             # Process each row
             for _, row in df.iterrows():
                 # Check if listing already exists
-                cursor.execute('SELECT listing_id, scrapelog FROM Listings WHERE listing_id = ?', 
+                cursor.execute('SELECT listing_id FROM Listings WHERE listing_id = ?', 
                              (row['listing_id'],))
                 existing = cursor.fetchone()
                 
                 if existing:
-                    # Update existing listing with new scrape log
-                    existing_log = existing[1] if existing[1] else ""
-                    new_log = f"{existing_log}\n{current_timestamp}" if existing_log else current_timestamp
-                    
-                    # Update the scrapelog
-                    cursor.execute('UPDATE Listings SET scrapelog = ? WHERE listing_id = ?',
-                                 (new_log, row['listing_id']))
+                    # Add new scrape date to history
+                    cursor.execute('''
+                        INSERT INTO ScrapingHistory (listing_id, scrape_date)
+                        VALUES (?, ?)
+                    ''', (row['listing_id'], current_timestamp))
                 else:
-                    # For new listings, prepare the data
+                    # Prepare data for new listing
                     new_listing = {
                         'listing_id': row['listing_id'],
-                        'initial_scraped_date': current_timestamp,
-                        'scrapelog': ""
+                        'title': row.get('title', 'N/A'),
+                        'category': row.get('category', 'N/A'),
+                        'price': row.get('price', 'N/A'),
+                        'location': row.get('location', 'N/A'),
+                        'url': row.get('url', 'N/A')
                     }
                     
                     # Add all other columns from the row
                     for col in row.index:
-                        if col not in ['listing_id', 'initial_scraped_date', 'scrapelog']:
+                        if col not in ['listing_id', 'title', 'category', 'price', 'location', 'url', 'initial_scraped_date', 'scrapelog']:
                             new_listing[col] = row[col] if pd.notna(row[col]) else 'N/A'
                     
                     # Create the INSERT query
@@ -477,7 +486,7 @@ class FundaScraper:
                         values.append(val)
                         placeholders.append('?')
                     
-                    # Construct the INSERT query
+                    # Insert new listing
                     insert_sql = f'''
                         INSERT INTO Listings (
                             {', '.join(columns)}
@@ -485,9 +494,13 @@ class FundaScraper:
                             {', '.join(placeholders)}
                         )
                     '''
-                    
-                    # Insert new listing
                     cursor.execute(insert_sql, tuple(values))
+                    
+                    # Add initial scrape date to history
+                    cursor.execute('''
+                        INSERT INTO ScrapingHistory (listing_id, scrape_date)
+                        VALUES (?, ?)
+                    ''', (row['listing_id'], current_timestamp))
             
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
