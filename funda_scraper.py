@@ -284,6 +284,11 @@ class FundaScraper:
                 if eigendomssituaties:
                     details['eigendomssituatie'] = '-'.join(eigendomssituaties)
             
+            # Log the details we found
+            logger.info(f"Found {len(details)} details for listing")
+            for key, value in details.items():
+                logger.debug(f"{key}: {value}")
+            
             return details
             
         except Exception as e:
@@ -411,19 +416,25 @@ class FundaScraper:
             if 'scraped_date' in df.columns:
                 df = df.rename(columns={'scraped_date': 'initial_scraped_date'})
             
-            # Create table if it doesn't exist with new columns
-            cursor.execute('''
+            # Get all unique columns from the DataFrame
+            all_columns = set(df.columns)
+            
+            # Create table if it doesn't exist with all possible columns
+            create_table_sql = '''
                 CREATE TABLE IF NOT EXISTS Listings (
                     listing_id TEXT PRIMARY KEY,
                     initial_scraped_date TEXT,
-                    scrapelog TEXT,
-                    title TEXT,
-                    category TEXT,
-                    price TEXT,
-                    location TEXT,
-                    url TEXT
-                )
-            ''')
+                    scrapelog TEXT
+            '''
+            
+            # Add all other columns as TEXT
+            for col in all_columns:
+                if col not in ['listing_id', 'initial_scraped_date', 'scrapelog']:
+                    create_table_sql += f',\n    {col} TEXT'
+            
+            create_table_sql += '\n)'
+            
+            cursor.execute(create_table_sql)
             
             # Get current timestamp for new scrapes
             current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -448,30 +459,21 @@ class FundaScraper:
                     new_listing = {
                         'listing_id': row['listing_id'],
                         'initial_scraped_date': current_timestamp,
-                        'scrapelog': "",
-                        'title': row.get('title', 'N/A'),
-                        'category': row.get('category', 'N/A'),
-                        'price': row.get('price', 'N/A'),
-                        'location': row.get('location', 'N/A'),
-                        'url': row.get('url', 'N/A')
+                        'scrapelog': ""
                     }
                     
-                    # Insert new listing with all required columns
-                    cursor.execute('''
-                        INSERT INTO Listings (
-                            listing_id, initial_scraped_date, scrapelog, 
-                            title, category, price, location, url
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        new_listing['listing_id'],
-                        new_listing['initial_scraped_date'],
-                        new_listing['scrapelog'],
-                        new_listing['title'],
-                        new_listing['category'],
-                        new_listing['price'],
-                        new_listing['location'],
-                        new_listing['url']
-                    ))
+                    # Add all other columns from the row
+                    for col in row.index:
+                        if col not in ['listing_id', 'initial_scraped_date', 'scrapelog']:
+                            new_listing[col] = row[col] if pd.notna(row[col]) else 'N/A'
+                    
+                    # Create the INSERT query dynamically
+                    columns = ', '.join(new_listing.keys())
+                    placeholders = ', '.join(['?' for _ in new_listing])
+                    values = tuple(new_listing.values())
+                    
+                    # Insert new listing
+                    cursor.execute(f'INSERT INTO Listings ({columns}) VALUES ({placeholders})', values)
             
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
