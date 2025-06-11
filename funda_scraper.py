@@ -455,7 +455,7 @@ class FundaScraper:
                     cursor.execute('UPDATE Listings SET scrapelog = ? WHERE listing_id = ?',
                                  (new_log, row['listing_id']))
                 else:
-                    # For new listings, ensure all required columns are present
+                    # For new listings, prepare the data
                     new_listing = {
                         'listing_id': row['listing_id'],
                         'initial_scraped_date': current_timestamp,
@@ -467,13 +467,27 @@ class FundaScraper:
                         if col not in ['listing_id', 'initial_scraped_date', 'scrapelog']:
                             new_listing[col] = row[col] if pd.notna(row[col]) else 'N/A'
                     
-                    # Create the INSERT query dynamically
-                    columns = ', '.join(new_listing.keys())
-                    placeholders = ', '.join(['?' for _ in new_listing])
-                    values = tuple(new_listing.values())
+                    # Create the INSERT query
+                    columns = []
+                    values = []
+                    placeholders = []
+                    
+                    for col, val in new_listing.items():
+                        columns.append(col)
+                        values.append(val)
+                        placeholders.append('?')
+                    
+                    # Construct the INSERT query
+                    insert_sql = f'''
+                        INSERT INTO Listings (
+                            {', '.join(columns)}
+                        ) VALUES (
+                            {', '.join(placeholders)}
+                        )
+                    '''
                     
                     # Insert new listing
-                    cursor.execute(f'INSERT INTO Listings ({columns}) VALUES ({placeholders})', values)
+                    cursor.execute(insert_sql, tuple(values))
             
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
