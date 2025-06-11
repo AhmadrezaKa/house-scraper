@@ -413,7 +413,7 @@ class FundaScraper:
             df.columns = [col.replace(' ', '_') for col in df.columns]
             
             # Create main listings table if it doesn't exist
-            create_listings_table = '''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS Listings (
                     listing_id TEXT PRIMARY KEY,
                     title TEXT,
@@ -421,28 +421,18 @@ class FundaScraper:
                     price TEXT,
                     location TEXT,
                     url TEXT
-            '''
-            
-            # Add all other columns as TEXT
-            for col in df.columns:
-                if col not in ['listing_id', 'title', 'category', 'price', 'location', 'url', 'initial_scraped_date', 'scrapelog']:
-                    create_listings_table += f',\n    {col} TEXT'
-            
-            create_listings_table += '\n)'
+                )
+            ''')
             
             # Create scraping history table if it doesn't exist
-            create_history_table = '''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ScrapingHistory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     listing_id TEXT,
                     scrape_date TEXT,
                     FOREIGN KEY (listing_id) REFERENCES Listings(listing_id)
                 )
-            '''
-            
-            # Execute table creation
-            cursor.execute(create_listings_table)
-            cursor.execute(create_history_table)
+            ''')
             
             # Get current timestamp for new scrapes
             current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -461,40 +451,18 @@ class FundaScraper:
                         VALUES (?, ?)
                     ''', (row['listing_id'], current_timestamp))
                 else:
-                    # Prepare data for new listing
-                    new_listing = {
-                        'listing_id': row['listing_id'],
-                        'title': row.get('title', 'N/A'),
-                        'category': row.get('category', 'N/A'),
-                        'price': row.get('price', 'N/A'),
-                        'location': row.get('location', 'N/A'),
-                        'url': row.get('url', 'N/A')
-                    }
-                    
-                    # Add all other columns from the row
-                    for col in row.index:
-                        if col not in ['listing_id', 'title', 'category', 'price', 'location', 'url', 'initial_scraped_date', 'scrapelog']:
-                            new_listing[col] = row[col] if pd.notna(row[col]) else 'N/A'
-                    
-                    # Create the INSERT query
-                    columns = []
-                    values = []
-                    placeholders = []
-                    
-                    for col, val in new_listing.items():
-                        columns.append(col)
-                        values.append(val)
-                        placeholders.append('?')
-                    
-                    # Insert new listing
-                    insert_sql = f'''
-                        INSERT INTO Listings (
-                            {', '.join(columns)}
-                        ) VALUES (
-                            {', '.join(placeholders)}
-                        )
-                    '''
-                    cursor.execute(insert_sql, tuple(values))
+                    # Insert new listing with basic information
+                    cursor.execute('''
+                        INSERT INTO Listings (listing_id, title, category, price, location, url)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        row['listing_id'],
+                        row.get('title', 'N/A'),
+                        row.get('category', 'N/A'),
+                        row.get('price', 'N/A'),
+                        row.get('location', 'N/A'),
+                        row.get('url', 'N/A')
+                    ))
                     
                     # Add initial scrape date to history
                     cursor.execute('''
