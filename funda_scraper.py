@@ -441,25 +441,20 @@ class FundaScraper:
                     new_log = f"{existing_log}\n{current_timestamp}" if existing_log else current_timestamp
                     
                     # Update the scrapelog
-                    cursor.execute('''
-                        UPDATE Listings 
-                        SET scrapelog = ?
-                        WHERE listing_id = ?
-                    ''', (new_log, row['listing_id']))
+                    cursor.execute('UPDATE Listings SET scrapelog = ? WHERE listing_id = ?',
+                                 (new_log, row['listing_id']))
                 else:
                     # Insert new listing
                     row_dict = row.to_dict()
                     row_dict['initial_scraped_date'] = current_timestamp
                     row_dict['scrapelog'] = ""
                     
+                    # Create the INSERT query dynamically
                     columns = ', '.join(row_dict.keys())
                     placeholders = ', '.join(['?' for _ in row_dict])
                     values = tuple(row_dict.values())
                     
-                    cursor.execute(f'''
-                        INSERT INTO Listings ({columns})
-                        VALUES ({placeholders})
-                    ''', values)
+                    cursor.execute(f'INSERT INTO Listings ({columns}) VALUES ({placeholders})', values)
             
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
@@ -472,6 +467,23 @@ class FundaScraper:
             if 'conn' in locals():
                 conn.close()
 
+    def get_existing_listings(self):
+        """Get all existing listing IDs and URLs from the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT listing_id, url FROM Listings')
+            existing_listings = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            return existing_listings
+        except Exception as e:
+            logger.error(f"Error getting existing listings: {str(e)}")
+            return {}
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
     def scrape(self, n_pages=None):
         """Scrape listings from Funda in Business"""
         all_listings = []
@@ -480,6 +492,10 @@ class FundaScraper:
         logger.info(f"Search criteria: City={self.city}, Radius={self.radius}")
         
         try:
+            # Get existing listings from database
+            existing_listings = self.get_existing_listings()
+            logger.info(f"Found {len(existing_listings)} existing listings in database")
+            
             # Get first page to determine total pages
             html_content = self.get_page(1)
             if not html_content:
@@ -498,9 +514,49 @@ class FundaScraper:
             
             if listings:
                 for listing in listings:
-                    listing_data = self.parse_listing(listing)
-                    if listing_data:
+                    # Extract URL first to check if it exists
+                    content = listing.find("div", class_="search-result-content")
+                    if not content:
+                        continue
+                        
+                    content_inner = content.find("div", class_="search-result-content-inner")
+                    if not content_inner:
+                        continue
+                        
+                    header_title_col = content_inner.find("div", class_="search-result__header-title-col")
+                    title_link = header_title_col.find("a") if header_title_col else None
+                    
+                    if not title_link:
+                        continue
+                        
+                    url = title_link.get("href")
+                    if url and not url.startswith("http"):
+                        url = f"{self.base_url}{url}"
+                    
+                    # Extract listing ID
+                    listing_id = None
+                    if url:
+                        match = re.search(r'object-(\d+)-', url)
+                        if match:
+                            listing_id = match.group(1)
+                    
+                    if not listing_id:
+                        continue
+                    
+                    # Check if listing exists in database
+                    if listing_id in existing_listings:
+                        # Just add to the list with minimal info for updating scrapelog
+                        listing_data = {
+                            "listing_id": listing_id,
+                            "url": url,
+                            "title": title_link.text.strip() if title_link else "N/A"
+                        }
                         all_listings.append(listing_data)
+                    else:
+                        # Parse full listing details for new listings
+                        listing_data = self.parse_listing(listing)
+                        if listing_data:
+                            all_listings.append(listing_data)
             
             # Process remaining pages
             for page in range(2, total_pages + 1):
@@ -523,9 +579,49 @@ class FundaScraper:
                     
                 # Parse each listing
                 for listing in listings:
-                    listing_data = self.parse_listing(listing)
-                    if listing_data:
+                    # Extract URL first to check if it exists
+                    content = listing.find("div", class_="search-result-content")
+                    if not content:
+                        continue
+                        
+                    content_inner = content.find("div", class_="search-result-content-inner")
+                    if not content_inner:
+                        continue
+                        
+                    header_title_col = content_inner.find("div", class_="search-result__header-title-col")
+                    title_link = header_title_col.find("a") if header_title_col else None
+                    
+                    if not title_link:
+                        continue
+                        
+                    url = title_link.get("href")
+                    if url and not url.startswith("http"):
+                        url = f"{self.base_url}{url}"
+                    
+                    # Extract listing ID
+                    listing_id = None
+                    if url:
+                        match = re.search(r'object-(\d+)-', url)
+                        if match:
+                            listing_id = match.group(1)
+                    
+                    if not listing_id:
+                        continue
+                    
+                    # Check if listing exists in database
+                    if listing_id in existing_listings:
+                        # Just add to the list with minimal info for updating scrapelog
+                        listing_data = {
+                            "listing_id": listing_id,
+                            "url": url,
+                            "title": title_link.text.strip() if title_link else "N/A"
+                        }
                         all_listings.append(listing_data)
+                    else:
+                        # Parse full listing details for new listings
+                        listing_data = self.parse_listing(listing)
+                        if listing_data:
+                            all_listings.append(listing_data)
                 
                 logger.info(f"Found {len(listings)} listings on page {page}")
                 
