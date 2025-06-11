@@ -409,13 +409,20 @@ class FundaScraper:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Enable foreign key support
+            cursor.execute('PRAGMA foreign_keys = ON')
+            
             # Clean column names to match database columns
             df.columns = [col.replace(' ', '_') for col in df.columns]
             
-            # Create main listings table if it doesn't exist
+            # Drop existing tables if they exist (to recreate with proper constraints)
+            cursor.execute('DROP TABLE IF EXISTS ScrapingHistory')
+            cursor.execute('DROP TABLE IF EXISTS Listings')
+            
+            # Create main listings table with proper primary key
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS Listings (
-                    listing_id TEXT PRIMARY KEY,
+                CREATE TABLE Listings (
+                    listing_id TEXT NOT NULL PRIMARY KEY,
                     title TEXT,
                     category TEXT,
                     price TEXT,
@@ -424,13 +431,13 @@ class FundaScraper:
                 )
             ''')
             
-            # Create scraping history table if it doesn't exist
+            # Create scraping history table with proper foreign key
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS ScrapingHistory (
+                CREATE TABLE ScrapingHistory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    listing_id TEXT,
-                    scrape_date TEXT,
-                    FOREIGN KEY (listing_id) REFERENCES Listings(listing_id)
+                    listing_id TEXT NOT NULL,
+                    scrape_date TEXT NOT NULL,
+                    FOREIGN KEY (listing_id) REFERENCES Listings(listing_id) ON DELETE CASCADE
                 )
             ''')
             
