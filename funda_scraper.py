@@ -405,23 +405,15 @@ class FundaScraper:
     def append_to_database(self, df):
         """Append the scraped data to SQLite database with scraping history"""
         try:
-            # Connect to SQLite database
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             # Enable foreign key support
             cursor.execute('PRAGMA foreign_keys = ON')
             
-            # Clean column names to match database columns
-            df.columns = [col.replace(' ', '_') for col in df.columns]
-            
-            # Drop existing tables if they exist (to recreate with proper constraints)
-            cursor.execute('DROP TABLE IF EXISTS ScrapingHistory')
-            cursor.execute('DROP TABLE IF EXISTS Listings')
-            
-            # Create main listings table with proper primary key
+            # Create tables if they don't exist (remove the DROP TABLE statements)
             cursor.execute('''
-                CREATE TABLE Listings (
+                CREATE TABLE IF NOT EXISTS Listings (
                     listing_id TEXT NOT NULL PRIMARY KEY,
                     title TEXT,
                     category TEXT,
@@ -431,9 +423,8 @@ class FundaScraper:
                 )
             ''')
             
-            # Create scraping history table with proper foreign key
             cursor.execute('''
-                CREATE TABLE ScrapingHistory (
+                CREATE TABLE IF NOT EXISTS ScrapingHistory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     listing_id TEXT NOT NULL,
                     scrape_date TEXT NOT NULL,
@@ -446,37 +437,56 @@ class FundaScraper:
             
             # Process each row
             for _, row in df.iterrows():
-                # Check if listing already exists
-                cursor.execute('SELECT listing_id FROM Listings WHERE listing_id = ?', 
-                             (row['listing_id'],))
-                existing = cursor.fetchone()
-                
-                if existing:
-                    # Add new scrape date to history
-                    cursor.execute('''
-                        INSERT INTO ScrapingHistory (listing_id, scrape_date)
-                        VALUES (?, ?)
-                    ''', (row['listing_id'], current_timestamp))
-                else:
-                    # Insert new listing with basic information
-                    cursor.execute('''
-                        INSERT INTO Listings (listing_id, title, category, price, location, url)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (
-                        row['listing_id'],
-                        row.get('title', 'N/A'),
-                        row.get('category', 'N/A'),
-                        row.get('price', 'N/A'),
-                        row.get('location', 'N/A'),
-                        row.get('url', 'N/A')
-                    ))
+                try:
+                    # Check if listing already exists
+                    cursor.execute('SELECT listing_id FROM Listings WHERE listing_id = ?', 
+                                 (row['listing_id'],))
+                    existing = cursor.fetchone()
                     
-                    # Add initial scrape date to history
-                    cursor.execute('''
-                        INSERT INTO ScrapingHistory (listing_id, scrape_date)
-                        VALUES (?, ?)
-                    ''', (row['listing_id'], current_timestamp))
-            
+                    if existing:
+                        # Update existing listing
+                        cursor.execute('''
+                            UPDATE Listings 
+                            SET title = ?, category = ?, price = ?, location = ?, url = ?
+                            WHERE listing_id = ?
+                        ''', (
+                            row.get('title', 'N/A'),
+                            row.get('category', 'N/A'),
+                            row.get('price', 'N/A'),
+                            row.get('location', 'N/A'),
+                            row.get('url', 'N/A'),
+                            row['listing_id']
+                        ))
+                        
+                        # Add new scrape date to history
+                        cursor.execute('''
+                            INSERT INTO ScrapingHistory (listing_id, scrape_date)
+                            VALUES (?, ?)
+                        ''', (row['listing_id'], current_timestamp))
+                    else:
+                        # Insert new listing
+                        cursor.execute('''
+                            INSERT INTO Listings (listing_id, title, category, price, location, url)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (
+                            row['listing_id'],
+                            row.get('title', 'N/A'),
+                            row.get('category', 'N/A'),
+                            row.get('price', 'N/A'),
+                            row.get('location', 'N/A'),
+                            row.get('url', 'N/A')
+                        ))
+                        
+                        # Add initial scrape date to history
+                        cursor.execute('''
+                            INSERT INTO ScrapingHistory (listing_id, scrape_date)
+                            VALUES (?, ?)
+                        ''', (row['listing_id'], current_timestamp))
+                
+                except sqlite3.IntegrityError as e:
+                    logger.error(f"Database integrity error for listing {row['listing_id']}: {str(e)}")
+                    continue
+                    
             conn.commit()
             logger.info(f"Successfully updated database with {len(df)} records")
             
@@ -743,7 +753,10 @@ class FundaScraper:
             
         finally:
             # Always close the driver
-            self.driver.quit()
+            try:
+                self.driver.quit()
+            except Exception as e:
+                logger.error(f"Error while closing the driver: {e}")
 
 if __name__ == "__main__":
     # Example usage
@@ -755,5 +768,4 @@ if __name__ == "__main__":
     # Scrape all pages
     df = scraper.scrape()
     print("\nFirst few listings:")
-    print(df.head()) 
-    
+    print(df.head())
