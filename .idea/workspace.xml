@@ -4,22 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="20ce0e53-b852-4ddc-98d8-1e39c5d4880d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/encodings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/indexLayout.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250611_143730.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250611_144103.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250611_144419.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250611_144745.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250611_145010.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250612_102522.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250612_113940.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/funda_listings_nuland_20250616_110326.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.~lock.funda_listings_nuland_20250611_115355.csv#" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/funda_scraper.py" beforeDir="false" afterPath="$PROJECT_DIR$/funda_scraper.py" afterDir="false" />
-    </list>
+    <list default="true" id="20ce0e53-b852-4ddc-98d8-1e39c5d4880d" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -65,7 +50,7 @@
       <updated>1749715968325</updated>
       <workItem from="1749715970298" duration="5728000" />
       <workItem from="1749728124457" duration="1685000" />
-      <workItem from="1750064443199" duration="611000" />
+      <workItem from="1750064443199" duration="1801000" />
     </task>
     <servers />
   </component>
