@@ -3,6 +3,7 @@ import logging
 import random
 import re
 import os
+import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -27,7 +28,9 @@ class FundaScraper:
         city="den-bosch",
         radius="50km",
         categories=None,
-        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data"
+        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data",
+        image_categories=None,
+        max_images_per_listing=8
     ):
         """Initialize the Funda scraper for agrarian listings only."""
         self.base_url = "https://www.fundainbusiness.nl"
@@ -35,9 +38,12 @@ class FundaScraper:
         self.radius = radius
         self.categories = categories or ["agrarisch-bedrijf", "agrarische-grond"]
         self.output_dir = output_dir
+        self.images_dir = os.path.join(self.output_dir, "images")
+        self.image_categories = image_categories or ["agrarische-grond"]
+        self.max_images_per_listing = max_images_per_listing
 
-        # Ensure output folder exists
         os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.images_dir, exist_ok=True)
 
         self.setup_driver()
 
@@ -77,6 +83,11 @@ class FundaScraper:
             self.driver.execute_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )
+
+            self.request_headers = {
+                "User-Agent": chosen_user_agent,
+                "Referer": self.base_url
+            }
 
         except Exception as e:
             logger.error(f"Error setting up Chrome driver: {str(e)}")
@@ -174,13 +185,7 @@ class FundaScraper:
             return 1
 
     def _extract_kadastrale_gegevens(self, soup):
-        """
-        Extract all cadastral parcel codes from the kadastrale gegevens section.
-        This version handles both:
-        - <div class="kadaster-title">...</div>
-        - <div class="">...</div>
-        - plain inner div/text inside the group header
-        """
+        """Extract all cadastral parcel codes from the kadastrale gegevens section."""
         codes = []
 
         kenmerken_body = soup.find("div", class_="object-kenmerken-body")
@@ -194,32 +199,135 @@ class FundaScraper:
                 current_section = self._normalize_text(element)
 
             elif getattr(element, "name", None) == "dl" and current_section == "Kadastrale gegevens":
-                group_headers = element.find_all("dt", class_=lambda c: c and "object-kenmerken-group-header" in c)
+                group_headers = element.find_all(
+                    "dt",
+                    class_=lambda c: c and "object-kenmerken-group-header" in c
+                )
 
                 for header in group_headers:
-                    # First try inner div
                     inner_div = header.find("div")
                     code = self._normalize_text(inner_div) if inner_div else None
 
-                    # Fallback to the dt text itself
                     if not code:
                         code = self._normalize_text(header)
 
                     if code:
                         codes.append(code)
 
-        # Remove duplicates while keeping order
         unique_codes = list(dict.fromkeys(codes))
-
         return " | ".join(unique_codes) if unique_codes else None
 
-    def _extract_detail_fields(self, soup):
-        """Extract only the clean fixed fields needed for CSV."""
+    def _parse_srcset_best_url(self, srcset):
+        """
+        Prefer 1080w, then 720w, then 1440w, then 360w, then 180w.
+        Fallback to the largest available if no preferred width matches.
+        """
+        if not srcset:
+            return None
+
+        candidates = []
+        for item in srcset.split(","):
+            item = item.strip()
+            parts = item.split()
+            if len(parts) >= 2:
+                url = parts[0].strip()
+                width_text = parts[1].strip().lower()
+                match = re.match(r"(\d+)w", width_text)
+                if match:
+                    width = int(match.group(1))
+                    candidates.append((width, url))
+
+        if not candidates:
+            return None
+
+        preferred_order = [1080, 720, 1440, 360, 180]
+        candidate_dict = {width: url for width, url in candidates}
+
+        for preferred_width in preferred_order:
+            if preferred_width in candidate_dict:
+                return candidate_dict[preferred_width]
+
+        # fallback: choose the largest available
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+
+    def _extract_image_urls(self, soup):
+        """
+        Extract unique gallery image URLs from the listing detail page.
+        """
+        image_urls = []
+
+        for img in soup.find_all("img"):
+            data_media_id = img.get("data-media-id")
+            src = img.get("src")
+            srcset = img.get("srcset")
+
+            # Strong filter for actual gallery/media photos
+            if not data_media_id and not (src and "cloud.funda.nl/valentina_media/" in src):
+                continue
+
+            best_url = self._parse_srcset_best_url(srcset) if srcset else None
+            final_url = best_url or src
+
+            if final_url and "cloud.funda.nl/valentina_media/" in final_url:
+                image_urls.append(final_url)
+
+        unique_urls = list(dict.fromkeys(image_urls))
+        return unique_urls
+
+    def _download_images_for_listing(self, listing_id, image_urls):
+        """
+        Download images into:
+        images/<listing_id>/<listing_id>_01.jpg
+        """
+        if not image_urls:
+            return 0, None
+
+        listing_folder = os.path.join(self.images_dir, str(listing_id))
+        os.makedirs(listing_folder, exist_ok=True)
+
+        downloaded_count = 0
+
+        for idx, image_url in enumerate(image_urls[:self.max_images_per_listing], start=1):
+            try:
+                file_name = f"{listing_id}_{idx:02d}.jpg"
+                file_path = os.path.join(listing_folder, file_name)
+
+                # Skip if already exists
+                if os.path.exists(file_path):
+                    downloaded_count += 1
+                    continue
+
+                response = requests.get(
+                    image_url,
+                    headers=self.request_headers,
+                    timeout=30,
+                    stream=True
+                )
+                response.raise_for_status()
+
+                with open(file_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+                downloaded_count += 1
+
+            except Exception as e:
+                logger.warning(f"Could not download image {image_url} for listing {listing_id}: {e}")
+
+        relative_folder = os.path.join("images", str(listing_id))
+        return downloaded_count, relative_folder if downloaded_count > 0 else None
+
+    def _extract_detail_fields(self, soup, source_category, listing_id):
+        """Extract clean fixed fields needed for CSV."""
         details = {
             "price": None,
             "location": None,
             "description": None,
-            "kadastrale_gegevens": None
+            "kadastrale_gegevens": None,
+            "image_count": 0,
+            "image_folder": None
         }
 
         header = soup.find("div", class_="object-header__content")
@@ -241,9 +349,15 @@ class FundaScraper:
 
         details["kadastrale_gegevens"] = self._extract_kadastrale_gegevens(soup)
 
+        if source_category in self.image_categories:
+            image_urls = self._extract_image_urls(soup)
+            downloaded_count, image_folder = self._download_images_for_listing(listing_id, image_urls)
+            details["image_count"] = downloaded_count
+            details["image_folder"] = image_folder
+
         return details
 
-    def get_listing_details(self, url):
+    def get_listing_details(self, url, source_category, listing_id):
         """Get clean details from a listing page."""
         try:
             logger.info(f"Getting details for listing: {url}")
@@ -261,11 +375,13 @@ class FundaScraper:
                     "price": None,
                     "location": None,
                     "description": None,
-                    "kadastrale_gegevens": None
+                    "kadastrale_gegevens": None,
+                    "image_count": 0,
+                    "image_folder": None
                 }
 
             soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            return self._extract_detail_fields(soup)
+            return self._extract_detail_fields(soup, source_category, listing_id)
 
         except Exception as e:
             logger.error(f"Error getting listing details: {str(e)}")
@@ -273,7 +389,9 @@ class FundaScraper:
                 "price": None,
                 "location": None,
                 "description": None,
-                "kadastrale_gegevens": None
+                "kadastrale_gegevens": None,
+                "image_count": 0,
+                "image_folder": None
             }
 
     def scrape(self, n_pages=None):
@@ -366,11 +484,17 @@ class FundaScraper:
                                 if price_span:
                                     price_from_search = self._normalize_text(price_span)
 
-                            details = self.get_listing_details(url) if url else {
+                            details = self.get_listing_details(
+                                url=url,
+                                source_category=category,
+                                listing_id=listing_id
+                            ) if url else {
                                 "price": None,
                                 "location": None,
                                 "description": None,
-                                "kadastrale_gegevens": None
+                                "kadastrale_gegevens": None,
+                                "image_count": 0,
+                                "image_folder": None
                             }
 
                             listing_data = {
@@ -384,6 +508,8 @@ class FundaScraper:
                                 "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "description": details.get("description"),
                                 "kadastrale_gegevens": details.get("kadastrale_gegevens"),
+                                "image_count": details.get("image_count", 0),
+                                "image_folder": details.get("image_folder")
                             }
 
                             all_listings.append(listing_data)
@@ -410,6 +536,8 @@ class FundaScraper:
                     "scraped_at",
                     "description",
                     "kadastrale_gegevens",
+                    "image_count",
+                    "image_folder",
                 ]
 
                 for col in fixed_columns:
@@ -426,7 +554,6 @@ class FundaScraper:
                     f"funda_agrarisch_{self.city}_{timestamp}.csv"
                 )
 
-                # Use semicolon separator for Dutch Excel environments
                 df.to_csv(filename, index=False, encoding="utf-8-sig", sep=";")
 
                 logger.info(f"Saved {len(df)} listings to {filename}")
@@ -446,7 +573,9 @@ if __name__ == "__main__":
         city="den-bosch",
         radius="50km",
         categories=["agrarisch-bedrijf", "agrarische-grond"],
-        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data"
+        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data",
+        image_categories=["agrarische-grond"],
+        max_images_per_listing=8
     )
 
     df = scraper.scrape()
