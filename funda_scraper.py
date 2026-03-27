@@ -166,12 +166,43 @@ class FundaScraper:
             logger.info(f"Could not determine pagination exactly, assuming 1 page. Reason: {str(e)}")
             return 1
 
+    def _extract_kadastrale_gegevens(self, soup):
+        """
+        Extract all cadastral codes from the detail page and join them.
+        Example:
+        'S-HERTOGENBOSCH R 527 | 'S-HERTOGENBOSCH R 2287
+        """
+        codes = []
+
+        kenmerken_body = soup.find("div", class_="object-kenmerken-body")
+        if not kenmerken_body:
+            return None
+
+        for div in kenmerken_body.find_all("div", class_="kadaster-title"):
+            code = self._normalize_text(div)
+            if code:
+                codes.append(code)
+
+        # Fallback: sometimes the div may not have class 'kadaster-title'
+        if not codes:
+            for dt in kenmerken_body.find_all("dt", class_="object-kenmerken-group-header"):
+                div = dt.find("div")
+                code = self._normalize_text(div)
+                if code:
+                    codes.append(code)
+
+        # Remove duplicates while keeping order
+        unique_codes = list(dict.fromkeys(codes))
+
+        return " | ".join(unique_codes) if unique_codes else None
+
     def _extract_detail_fields(self, soup):
         """Extract only the clean fixed fields needed for CSV."""
         details = {
             "price": None,
             "location": None,
-            "description": None
+            "description": None,
+            "kadastrale_gegevens": None
         }
 
         header = soup.find("div", class_="object-header__content")
@@ -190,6 +221,8 @@ class FundaScraper:
         if description_section:
             description_body = description_section.find("div", class_="object-description-body")
             details["description"] = self._normalize_text(description_body)
+
+        details["kadastrale_gegevens"] = self._extract_kadastrale_gegevens(soup)
 
         return details
 
@@ -210,7 +243,8 @@ class FundaScraper:
                 return {
                     "price": None,
                     "location": None,
-                    "description": None
+                    "description": None,
+                    "kadastrale_gegevens": None
                 }
 
             soup = BeautifulSoup(self.driver.page_source, "html.parser")
@@ -221,7 +255,8 @@ class FundaScraper:
             return {
                 "price": None,
                 "location": None,
-                "description": None
+                "description": None,
+                "kadastrale_gegevens": None
             }
 
     def scrape(self, n_pages=None):
@@ -316,7 +351,8 @@ class FundaScraper:
                             details = self.get_listing_details(url) if url else {
                                 "price": None,
                                 "location": None,
-                                "description": None
+                                "description": None,
+                                "kadastrale_gegevens": None
                             }
 
                             listing_data = {
@@ -329,6 +365,7 @@ class FundaScraper:
                                 "url": url,
                                 "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "description": details.get("description"),
+                                "kadastrale_gegevens": details.get("kadastrale_gegevens"),
                             }
 
                             all_listings.append(listing_data)
@@ -354,6 +391,7 @@ class FundaScraper:
                     "url",
                     "scraped_at",
                     "description",
+                    "kadastrale_gegevens",
                 ]
 
                 for col in fixed_columns:
@@ -367,7 +405,7 @@ class FundaScraper:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"funda_agrarisch_{self.city}_{timestamp}.csv"
 
-                # Use semicolon separator for cleaner opening in Dutch Excel environments
+                # Use semicolon separator for Dutch Excel environments
                 df.to_csv(filename, index=False, encoding="utf-8-sig", sep=";")
 
                 logger.info(f"Saved {len(df)} listings to {filename}")
