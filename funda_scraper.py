@@ -75,6 +75,13 @@ class FundaScraper:
             logger.error(f"Error setting up Chrome driver: {str(e)}")
             raise
 
+    def _normalize_text(self, value):
+        if value is None:
+            return None
+        value = value.get_text(" ", strip=True) if hasattr(value, "get_text") else str(value)
+        value = " ".join(value.split())
+        return value if value else None
+
     def get_page(self, category, page_num=1):
         """Get HTML content of a search result page."""
         url = f"{self.base_url}/{category}/{self.city}/+{self.radius}/"
@@ -159,143 +166,35 @@ class FundaScraper:
             logger.info(f"Could not determine pagination exactly, assuming 1 page. Reason: {str(e)}")
             return 1
 
-    def _normalize_text(self, value):
-        if value is None:
-            return None
-        value = value.get_text(" ", strip=True) if hasattr(value, "get_text") else str(value)
-        value = " ".join(value.split())
-        return value if value else None
+    def _extract_detail_fields(self, soup):
+        """Extract only the clean fixed fields needed for CSV."""
+        details = {
+            "price": None,
+            "location": None,
+            "description": None
+        }
 
-    def _extract_location_from_header(self, soup, title_text=None):
-        """
-        Try detail-page location first.
-        If not found, fall back to the part after the comma in the title.
-        """
         header = soup.find("div", class_="object-header__content")
         if header:
             h1 = header.find("h1")
             if h1:
                 subtitle = h1.find("span", class_="object-header__subtitle")
-                subtitle_text = self._normalize_text(subtitle)
-                if subtitle_text:
-                    return subtitle_text
+                details["location"] = self._normalize_text(subtitle)
 
-        if title_text and "," in title_text:
-            return title_text.split(",", 1)[1].strip()
-
-        return None
-
-    def _extract_price_from_header(self, soup):
-        header = soup.find("div", class_="object-header__content")
-        if header:
             price_div = header.find("div", class_="object-header__pricing")
             if price_div:
                 price = price_div.find("strong", class_="object-header__price")
-                price_text = self._normalize_text(price)
-                if price_text:
-                    return price_text
-        return None
+                details["price"] = self._normalize_text(price)
 
-    def _extract_description(self, soup):
         description_section = soup.find("section", class_="object-description")
         if description_section:
             description_body = description_section.find("div", class_="object-description-body")
-            if description_body:
-                return self._normalize_text(description_body)
-        return None
-
-    def _extract_standard_kenmerken(self, soup):
-        """
-        Extract a fixed set of standardized kenmerken fields.
-        """
-        details = {
-            "description": self._extract_description(soup),
-            "kadastrale_code": None,
-            "kadastrale_oppervlakte": None,
-            "eigendomssituatie": None,
-            "oppervlakte": None,
-            "perceeloppervlakte": None,
-            "bestemming": None,
-            "vraagprijs_per_m2": None
-        }
-
-        kenmerken_body = soup.find("div", class_="object-kenmerken-body")
-        if not kenmerken_body:
-            return details
-
-        current_section = None
-        kadastrale_codes = []
-        kadastrale_oppervlaktes = []
-        eigendomssituaties = []
-
-        for element in kenmerken_body.children:
-            if getattr(element, "name", None) == "h3":
-                current_section = self._normalize_text(element)
-
-            elif getattr(element, "name", None) == "dl":
-                if current_section == "Kadastrale gegevens":
-                    current_code = None
-
-                    for child in element.children:
-                        if getattr(child, "name", None) == "dt":
-                            classes = child.get("class", [])
-
-                            if "object-kenmerken-group-header" in classes:
-                                kadaster_title = child.find("div", class_="kadaster-title")
-                                current_code = self._normalize_text(kadaster_title or child)
-                                if current_code:
-                                    kadastrale_codes.append(current_code)
-
-                            else:
-                                label = self._normalize_text(child)
-                                dd = child.find_next_sibling("dd")
-                                value = self._normalize_text(dd)
-
-                                if not label or not value:
-                                    continue
-
-                                label_lower = label.lower()
-
-                                if "eigendomssituatie" in label_lower:
-                                    eigendomssituaties.append(value)
-                                elif "oppervlakte" in label_lower:
-                                    kadastrale_oppervlaktes.append(value)
-
-                # General dt/dd parsing for the rest of the page
-                dts = element.find_all("dt", recursive=False)
-                dds = element.find_all("dd", recursive=False)
-
-                for dt, dd in zip(dts, dds):
-                    label = self._normalize_text(dt)
-                    value = self._normalize_text(dd)
-
-                    if not label or not value:
-                        continue
-
-                    label_lower = label.lower()
-
-                    if label_lower == "oppervlakte":
-                        details["oppervlakte"] = value
-                    elif label_lower == "perceeloppervlakte":
-                        details["perceeloppervlakte"] = value
-                    elif label_lower == "bestemming":
-                        details["bestemming"] = value
-                    elif label_lower in ["vraagprijs per m²", "vraagprijs per m2"]:
-                        details["vraagprijs_per_m2"] = value
-
-        if kadastrale_codes:
-            details["kadastrale_code"] = " | ".join(dict.fromkeys(kadastrale_codes))
-
-        if kadastrale_oppervlaktes:
-            details["kadastrale_oppervlakte"] = " | ".join(dict.fromkeys(kadastrale_oppervlaktes))
-
-        if eigendomssituaties:
-            details["eigendomssituatie"] = " | ".join(dict.fromkeys(eigendomssituaties))
+            details["description"] = self._normalize_text(description_body)
 
         return details
 
     def get_listing_details(self, url):
-        """Get fixed, clean details from a listing page."""
+        """Get clean details from a listing page."""
         try:
             logger.info(f"Getting details for listing: {url}")
 
@@ -308,30 +207,25 @@ class FundaScraper:
                 )
             except TimeoutException:
                 logger.warning(f"Timeout waiting for listing page to load: {url}")
-                return {}
+                return {
+                    "price": None,
+                    "location": None,
+                    "description": None
+                }
 
             soup = BeautifulSoup(self.driver.page_source, "html.parser")
-
-            header = soup.find("div", class_="object-header__content")
-            title_text = None
-            if header:
-                h1 = header.find("h1")
-                if h1:
-                    title_span = h1.find("span", class_="object-header__title")
-                    title_text = self._normalize_text(title_span)
-
-            details = self._extract_standard_kenmerken(soup)
-            details["location"] = self._extract_location_from_header(soup, title_text=title_text)
-            details["price"] = self._extract_price_from_header(soup)
-
-            return details
+            return self._extract_detail_fields(soup)
 
         except Exception as e:
             logger.error(f"Error getting listing details: {str(e)}")
-            return {}
+            return {
+                "price": None,
+                "location": None,
+                "description": None
+            }
 
     def scrape(self, n_pages=None):
-        """Scrape agrarian listings and export them to CSV only."""
+        """Scrape agrarian listings and export them to a clean CSV only."""
         all_listings = []
         seen_listing_ids = set()
 
@@ -405,43 +299,36 @@ class FundaScraper:
 
                             seen_listing_ids.add(listing_id)
 
+                            title_text = self._normalize_text(title_link)
+
                             category_text = None
                             category_h4 = content_inner.find("h4", class_="search-result__header-subtitle")
                             if category_h4:
                                 category_text = self._normalize_text(category_h4)
 
-                            price = None
+                            price_from_search = None
                             price_div = content_inner.find("div", class_="search-result-info-price")
                             if price_div:
                                 price_span = price_div.find("span")
                                 if price_span:
-                                    price = self._normalize_text(price_span)
+                                    price_from_search = self._normalize_text(price_span)
 
-                            # fallback location from title
-                            title_text = self._normalize_text(title_link)
-                            location_from_title = None
-                            if title_text and "," in title_text:
-                                location_from_title = title_text.split(",", 1)[1].strip()
-
-                            details = self.get_listing_details(url) if url else {}
+                            details = self.get_listing_details(url) if url else {
+                                "price": None,
+                                "location": None,
+                                "description": None
+                            }
 
                             listing_data = {
                                 "listing_id": listing_id,
                                 "source_category": category,
                                 "title": title_text,
                                 "category": category_text,
-                                "price": details.get("price") or price,
-                                "location": details.get("location") or location_from_title,
+                                "price": details.get("price") or price_from_search,
+                                "location": details.get("location"),
                                 "url": url,
                                 "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "description": details.get("description"),
-                                "kadastrale_code": details.get("kadastrale_code"),
-                                "kadastrale_oppervlakte": details.get("kadastrale_oppervlakte"),
-                                "eigendomssituatie": details.get("eigendomssituatie"),
-                                "oppervlakte": details.get("oppervlakte"),
-                                "perceeloppervlakte": details.get("perceeloppervlakte"),
-                                "bestemming": details.get("bestemming"),
-                                "vraagprijs_per_m2": details.get("vraagprijs_per_m2"),
                             }
 
                             all_listings.append(listing_data)
@@ -467,13 +354,6 @@ class FundaScraper:
                     "url",
                     "scraped_at",
                     "description",
-                    "kadastrale_code",
-                    "kadastrale_oppervlakte",
-                    "eigendomssituatie",
-                    "oppervlakte",
-                    "perceeloppervlakte",
-                    "bestemming",
-                    "vraagprijs_per_m2",
                 ]
 
                 for col in fixed_columns:
@@ -486,7 +366,9 @@ class FundaScraper:
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"funda_agrarisch_{self.city}_{timestamp}.csv"
-                df.to_csv(filename, index=False, encoding="utf-8-sig")
+
+                # Use semicolon separator for cleaner opening in Dutch Excel environments
+                df.to_csv(filename, index=False, encoding="utf-8-sig", sep=";")
 
                 logger.info(f"Saved {len(df)} listings to {filename}")
                 return df
