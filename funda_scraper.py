@@ -2,6 +2,7 @@ import time
 import logging
 import random
 import re
+import os
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -25,13 +26,19 @@ class FundaScraper:
         self,
         city="den-bosch",
         radius="50km",
-        categories=None
+        categories=None,
+        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data"
     ):
         """Initialize the Funda scraper for agrarian listings only."""
         self.base_url = "https://www.fundainbusiness.nl"
         self.city = city.lower().replace(" ", "-")
         self.radius = radius
         self.categories = categories or ["agrarisch-bedrijf", "agrarische-grond"]
+        self.output_dir = output_dir
+
+        # Ensure output folder exists
+        os.makedirs(self.output_dir, exist_ok=True)
+
         self.setup_driver()
 
     def setup_driver(self):
@@ -168,9 +175,11 @@ class FundaScraper:
 
     def _extract_kadastrale_gegevens(self, soup):
         """
-        Extract all cadastral codes from the detail page and join them.
-        Example:
-        'S-HERTOGENBOSCH R 527 | 'S-HERTOGENBOSCH R 2287
+        Extract all cadastral parcel codes from the kadastrale gegevens section.
+        This version handles both:
+        - <div class="kadaster-title">...</div>
+        - <div class="">...</div>
+        - plain inner div/text inside the group header
         """
         codes = []
 
@@ -178,18 +187,26 @@ class FundaScraper:
         if not kenmerken_body:
             return None
 
-        for div in kenmerken_body.find_all("div", class_="kadaster-title"):
-            code = self._normalize_text(div)
-            if code:
-                codes.append(code)
+        current_section = None
 
-        # Fallback: sometimes the div may not have class 'kadaster-title'
-        if not codes:
-            for dt in kenmerken_body.find_all("dt", class_="object-kenmerken-group-header"):
-                div = dt.find("div")
-                code = self._normalize_text(div)
-                if code:
-                    codes.append(code)
+        for element in kenmerken_body.children:
+            if getattr(element, "name", None) == "h3":
+                current_section = self._normalize_text(element)
+
+            elif getattr(element, "name", None) == "dl" and current_section == "Kadastrale gegevens":
+                group_headers = element.find_all("dt", class_=lambda c: c and "object-kenmerken-group-header" in c)
+
+                for header in group_headers:
+                    # First try inner div
+                    inner_div = header.find("div")
+                    code = self._normalize_text(inner_div) if inner_div else None
+
+                    # Fallback to the dt text itself
+                    if not code:
+                        code = self._normalize_text(header)
+
+                    if code:
+                        codes.append(code)
 
         # Remove duplicates while keeping order
         unique_codes = list(dict.fromkeys(codes))
@@ -267,6 +284,7 @@ class FundaScraper:
         logger.info("Starting scraper for Funda Business agrarian listings only")
         logger.info(f"Search criteria: City={self.city}, Radius={self.radius}")
         logger.info(f"Categories: {self.categories}")
+        logger.info(f"Output directory: {self.output_dir}")
 
         try:
             for category in self.categories:
@@ -403,7 +421,10 @@ class FundaScraper:
                 logger.info(f"Total unique listings found: {len(df)}")
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"funda_agrarisch_{self.city}_{timestamp}.csv"
+                filename = os.path.join(
+                    self.output_dir,
+                    f"funda_agrarisch_{self.city}_{timestamp}.csv"
+                )
 
                 # Use semicolon separator for Dutch Excel environments
                 df.to_csv(filename, index=False, encoding="utf-8-sig", sep=";")
@@ -422,9 +443,10 @@ class FundaScraper:
 
 if __name__ == "__main__":
     scraper = FundaScraper(
-        city="nuland",
-        radius="3km",
-        categories=["agrarisch-bedrijf", "agrarische-grond"]
+        city="den-bosch",
+        radius="50km",
+        categories=["agrarisch-bedrijf", "agrarische-grond"],
+        output_dir=r"C:\Users\AhmadrezaKarimHackRe\Hack Rentmeesters\GEOICT - Data\Funda-scraping-data"
     )
 
     df = scraper.scrape()
